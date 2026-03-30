@@ -2,6 +2,7 @@ import type { KeyboardState, ManualCommand } from '../../types/bridge';
 import { PanelCard } from './PanelCard';
 
 interface ManualDrivePanelProps {
+  bridgeReady: boolean;
   mode: 'manual' | 'auto';
   manualCommand: ManualCommand;
   keyState: KeyboardState;
@@ -16,6 +17,7 @@ function Keycap({ label, active }: { label: string; active: boolean }) {
 }
 
 export function ManualDrivePanel({
+  bridgeReady,
   mode,
   manualCommand,
   keyState,
@@ -34,6 +36,7 @@ export function ManualDrivePanel({
               void onModeChange('manual');
             }}
             type="button"
+            disabled={!bridgeReady}
           >
             Manual
           </button>
@@ -43,6 +46,7 @@ export function ManualDrivePanel({
               void onModeChange('auto');
             }}
             type="button"
+            disabled={!bridgeReady}
           >
             Auto
           </button>
@@ -85,15 +89,16 @@ export function ManualDrivePanel({
           onClick={() => {
             void onResetToOrigin();
           }}
+          disabled={!bridgeReady}
         >
           Reset To Origin
         </button>
       </div>
       <p className="panel-note">
-        In manual mode, the bridge gets a fresh WASD command every 100 ms. In auto
-        mode, the fake vehicle follows `/control/tbs`.
+        {bridgeReady
+          ? 'In manual mode, the bridge gets a fresh WASD command every 100 ms. In auto mode, the fake vehicle follows `/control/tbs`.'
+          : 'Bridge offline. Keyboard driving, mode switching, and vehicle reset will enable once the bridge connects.'}
       </p>
     </PanelCard>
   );
 }
-

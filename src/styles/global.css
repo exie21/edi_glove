@@ -26,7 +26,7 @@ html,
 body,
 #root {
   margin: 0;
-  min-height: 100%;
+  height: 100%;
 }
 
 body {
@@ -36,6 +36,7 @@ body {
     radial-gradient(circle at bottom right, rgba(34, 215, 196, 0.1), transparent 28%),
     linear-gradient(180deg, #071018 0%, #08141e 52%, #050d14 100%);
   color: var(--text-main);
+  overflow: hidden;
 }
 
 button,
@@ -47,29 +48,47 @@ select {
 .app-shell {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 24rem;
+  height: 100vh;
+  height: 100dvh;
   min-height: 100vh;
+  overflow: hidden;
 }
 
 .app-shell__map {
-  min-height: 100vh;
+  position: relative;
+  min-width: 0;
+  min-height: 0;
 }
 
 .app-shell__sidebar {
-  display: flex;
-  flex-direction: column;
-  gap: 0.9rem;
-  padding: 1rem;
+  min-width: 0;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
   background:
     linear-gradient(180deg, rgba(8, 15, 21, 0.94), rgba(6, 13, 18, 0.92)),
     linear-gradient(135deg, rgba(255, 178, 77, 0.08), transparent 45%);
   border-left: 1px solid var(--line-soft);
   box-shadow: inset 14px 0 40px rgba(0, 0, 0, 0.18);
+  overflow: hidden;
+}
+
+.app-shell__sidebar-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  height: 100%;
+  padding: 1rem;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .map-shell {
   position: relative;
-  min-height: 100vh;
+  height: 100%;
+  min-height: 0;
+  isolation: isolate;
 }
 
 .map-canvas {
@@ -91,6 +110,12 @@ select {
 .map-overlay--top-right {
   top: 1rem;
   right: 1rem;
+}
+
+.map-overlay--bottom-left {
+  left: 1rem;
+  bottom: 1rem;
+  max-width: 30rem;
 }
 
 .map-brand {
@@ -129,6 +154,23 @@ select {
   border: 1px solid rgba(34, 215, 196, 0.22);
   border-radius: 0.85rem;
   backdrop-filter: blur(10px);
+}
+
+.map-status-note {
+  margin: 0;
+  padding: 0.8rem 0.95rem;
+  color: var(--text-main);
+  background: rgba(7, 16, 24, 0.78);
+  border: 1px solid rgba(255, 214, 156, 0.22);
+  border-radius: 0.9rem;
+  backdrop-filter: blur(10px);
+  box-shadow: var(--shadow-panel);
+  line-height: 1.45;
+}
+
+.map-status-note--warning {
+  border-color: rgba(255, 157, 145, 0.26);
+  background: rgba(21, 11, 11, 0.78);
 }
 
 .panel-card {
@@ -304,6 +346,12 @@ select {
 .toggle-button--active {
   background: rgba(255, 178, 77, 0.18);
   color: var(--text-main);
+}
+
+.toggle-button:disabled,
+.overlay-toggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .drive-grid {
@@ -496,6 +544,10 @@ select {
   top: 0.88rem;
 }
 
+.ego-marker--inactive {
+  opacity: 0.38;
+}
+
 .maplibregl-popup-content,
 .maplibregl-ctrl-group {
   background: rgba(7, 16, 24, 0.88);
@@ -503,21 +555,37 @@ select {
 }
 
 @media (max-width: 1040px) {
+  body {
+    overflow: auto;
+  }
+
   .app-shell {
     grid-template-columns: 1fr;
+    height: auto;
+    min-height: 100vh;
+    overflow: visible;
   }
 
   .app-shell__map {
+    height: 62vh;
     min-height: 62vh;
   }
 
   .map-shell {
+    height: 62vh;
     min-height: 62vh;
   }
 
   .app-shell__sidebar {
     border-left: 0;
     border-top: 1px solid var(--line-soft);
+    height: auto;
+    overflow: visible;
+  }
+
+  .app-shell__sidebar-scroll {
+    height: auto;
+    overflow: visible;
   }
 }
 
@@ -528,7 +596,8 @@ select {
   }
 
   .map-overlay--top-left,
-  .map-overlay--top-right {
+  .map-overlay--top-right,
+  .map-overlay--bottom-left {
     left: 0.75rem;
     right: 0.75rem;
     max-width: none;

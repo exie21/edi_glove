@@ -6,10 +6,15 @@ import { PanelCard } from './PanelCard';
 
 interface GoalPanelProps {
   bridgeState: BridgeState | null;
+  bridgeReady: boolean;
   onGoalSubmit: (goal: GoalPayload) => Promise<void>;
 }
 
-export function GoalPanel({ bridgeState, onGoalSubmit }: GoalPanelProps) {
+export function GoalPanel({
+  bridgeState,
+  bridgeReady,
+  onGoalSubmit,
+}: GoalPanelProps) {
   const goalStatus = bridgeState?.goal_status;
   const goal = goalStatus?.goal;
   const [draftLat, setDraftLat] = useState('');
@@ -48,6 +53,11 @@ export function GoalPanel({ bridgeState, onGoalSubmit }: GoalPanelProps) {
   };
 
   const submitGoal = async () => {
+    if (!bridgeReady) {
+      setFormError('Bridge is offline. Start edi_sandbox_bridge before sending a goal.');
+      return;
+    }
+
     const parsedLat = Number(draftLat);
     const parsedLon = Number(draftLon);
     const parsedHeading = Number(draftHeading);
@@ -125,10 +135,20 @@ export function GoalPanel({ bridgeState, onGoalSubmit }: GoalPanelProps) {
         </label>
       </div>
       <div className="button-row">
-        <button className="action-button" type="button" onClick={() => void submitGoal()}>
+        <button
+          className="action-button"
+          type="button"
+          onClick={() => void submitGoal()}
+          disabled={!bridgeReady}
+        >
           Send Typed Goal
         </button>
-        <button className="action-button action-button--ghost" type="button" onClick={fillFromEgo}>
+        <button
+          className="action-button action-button--ghost"
+          type="button"
+          onClick={fillFromEgo}
+          disabled={!bridgeState}
+        >
           Use Ego Pose
         </button>
         <button
@@ -143,7 +163,9 @@ export function GoalPanel({ bridgeState, onGoalSubmit }: GoalPanelProps) {
       {formError ? <p className="panel-note panel-note--error">{formError}</p> : null}
       <p className="panel-note">
         {goalStatus?.message ??
-          'Click the map or type a lat/lon goal to send a GetShortestPath request.'}
+          (bridgeReady
+            ? 'Click the map or type a lat/lon goal to send a GetShortestPath request.'
+            : 'Bridge offline. You can still prepare a goal here, but sending it requires a live backend.')}
       </p>
     </PanelCard>
   );

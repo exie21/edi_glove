@@ -7,7 +7,12 @@ import maplibregl, {
 } from 'maplibre-gl';
 
 import { lineFeatureCollection, pointFeatureCollection } from '../../lib/geojson';
-import type { BridgeState, GoalPayload, ResetVehiclePayload } from '../../types/bridge';
+import type {
+  BridgeGoal,
+  BridgeState,
+  GoalPayload,
+  ResetVehiclePayload,
+} from '../../types/bridge';
 import type { OverlayVisibility } from '../../types/ui';
 
 const DEFAULT_CENTER = {
@@ -60,6 +65,7 @@ function syncOverlayLayerVisibility(
 interface MapViewProps {
   bridgeState: BridgeState | null;
   connectionStatus: 'loading' | 'connected' | 'error';
+  bridgeReady: boolean;
   overlayVisibility: OverlayVisibility;
   onGoalPick: (goal: GoalPayload) => Promise<void>;
   onResetVehicle: (payload: ResetVehiclePayload) => Promise<void>;
@@ -68,11 +74,14 @@ interface MapViewProps {
 export function MapView({
   bridgeState,
   connectionStatus,
+  bridgeReady,
   overlayVisibility,
   onGoalPick,
   onResetVehicle,
 }: MapViewProps) {
   const [followEgo, setFollowEgo] = useState(true);
+  const [previewGoal, setPreviewGoal] = useState<BridgeGoal | null>(null);
+  const [mapStatusMessage, setMapStatusMessage] = useState<string | null>(null);
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const mapReadyRef = useRef(false);
@@ -80,10 +89,12 @@ export function MapView({
   const initialCameraSetRef = useRef(false);
   const lastFollowCenterRef = useRef<{ lat: number; lon: number } | null>(null);
   const latestBridgeStateRef = useRef<BridgeState | null>(bridgeState);
+  const latestBridgeReadyRef = useRef(bridgeReady);
   const latestGoalHandlerRef = useRef(onGoalPick);
   const latestOverlayVisibilityRef = useRef(overlayVisibility);
 
   latestBridgeStateRef.current = bridgeState;
+  latestBridgeReadyRef.current = bridgeReady;
   latestGoalHandlerRef.current = onGoalPick;
   latestOverlayVisibilityRef.current = overlayVisibility;
 
@@ -92,8 +103,9 @@ export function MapView({
       return;
     }
 
+    const container = mapContainerRef.current;
     const map = new maplibregl.Map({
-      container: mapContainerRef.current,
+      container,
       style: buildSatelliteStyle() as StyleSpecification,
       center: [DEFAULT_CENTER.lon, DEFAULT_CENTER.lat],
       zoom: 17.4,
@@ -116,8 +128,20 @@ export function MapView({
       .setLngLat([DEFAULT_CENTER.lon, DEFAULT_CENTER.lat])
       .addTo(map);
 
+    const resizeMap = () => {
+      map.resize();
+    };
+    const resizeObserver = typeof ResizeObserver !== 'undefined'
+      ? new ResizeObserver(() => {
+          resizeMap();
+        })
+      : null;
+    resizeObserver?.observe(container);
+    window.addEventListener('resize', resizeMap);
+
     map.on('load', () => {
       mapReadyRef.current = true;
+      resizeMap();
 
       map.addSource('route-source', {
         type: 'geojson',
@@ -197,17 +221,36 @@ export function MapView({
     });
 
     map.on('click', (event) => {
-      const heading = latestBridgeStateRef.current?.ego.heading_deg ?? 0;
-      void latestGoalHandlerRef.current({
+      const goal: BridgeGoal = {
         goal_lat: event.lngLat.lat,
         goal_lon: event.lngLat.lng,
-        goal_heading: heading,
-      });
+        goal_heading: latestBridgeStateRef.current?.ego.heading_deg ?? 0,
+      };
+
+      setPreviewGoal(goal);
+
+      if (!latestBridgeReadyRef.current) {
+        setMapStatusMessage('Bridge offline. Goal preview updated on the map.');
+        return;
+      }
+
+      setMapStatusMessage('Sending goal request through the bridge...');
+      void latestGoalHandlerRef.current(goal)
+        .then(() => {
+          setMapStatusMessage('Goal request sent to the bridge.');
+        })
+        .catch((error) => {
+          setMapStatusMessage(
+            error instanceof Error ? error.message : 'Goal request failed.',
+          );
+        });
     });
 
     mapRef.current = map;
 
     return () => {
+      resizeObserver?.disconnect();
+      window.removeEventListener('resize', resizeMap);
       egoMarkerRef.current?.remove();
       egoMarkerRef.current = null;
       map.remove();
@@ -217,6 +260,12 @@ export function MapView({
       lastFollowCenterRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    if (bridgeState?.goal_status.goal) {
+      setPreviewGoal(null);
+    }
+  }, [bridgeState?.goal_status.goal]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -234,7 +283,7 @@ export function MapView({
     trajectorySource?.setData(lineFeatureCollection(bridgeState.reference_trajectory.points));
     predictedSource?.setData(lineFeatureCollection(bridgeState.predicted_path.points));
     debugSource?.setData(lineFeatureCollection(bridgeState.debug_reference_path.points));
-    goalSource?.setData(pointFeatureCollection(bridgeState.goal_status.goal));
+    goalSource?.setData(pointFeatureCollection(bridgeState.goal_status.goal ?? previewGoal));
 
     egoMarkerRef.current
       ?.setLngLat([bridgeState.ego.longitude_deg, bridgeState.ego.latitude_deg])
@@ -268,7 +317,24 @@ export function MapView({
         };
       }
     }
-  }, [bridgeState, followEgo]);
+  }, [bridgeState, followEgo, previewGoal]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    const goalSource = map?.getSource('goal-source') as GeoJSONSource | undefined;
+    if (!goalSource) {
+      return;
+    }
+    goalSource.setData(pointFeatureCollection(bridgeState?.goal_status.goal ?? previewGoal));
+  }, [bridgeState?.goal_status.goal, previewGoal]);
+
+  useEffect(() => {
+    const markerElement = egoMarkerRef.current?.getElement();
+    if (!markerElement) {
+      return;
+    }
+    markerElement.classList.toggle('ego-marker--inactive', !bridgeState);
+  }, [bridgeState]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -279,18 +345,25 @@ export function MapView({
   }, [overlayVisibility]);
 
   const centerOnEgo = () => {
-    if (!mapRef.current || !bridgeState) {
+    if (!mapRef.current) {
       return;
     }
+
+    const targetCenter = bridgeState
+      ? [bridgeState.ego.longitude_deg, bridgeState.ego.latitude_deg] as [number, number]
+      : [DEFAULT_CENTER.lon, DEFAULT_CENTER.lat] as [number, number];
+
     mapRef.current.easeTo({
-      center: [bridgeState.ego.longitude_deg, bridgeState.ego.latitude_deg],
-      zoom: Math.max(mapRef.current.getZoom(), 18),
+      center: targetCenter,
+      zoom: Math.max(mapRef.current.getZoom(), bridgeState ? 18 : 17.4),
       duration: 700,
     });
-    lastFollowCenterRef.current = {
-      lat: bridgeState.ego.latitude_deg,
-      lon: bridgeState.ego.longitude_deg,
-    };
+    if (bridgeState) {
+      lastFollowCenterRef.current = {
+        lat: bridgeState.ego.latitude_deg,
+        lon: bridgeState.ego.longitude_deg,
+      };
+    }
   };
 
   const resetVehicleToMapCenter = () => {
@@ -306,6 +379,17 @@ export function MapView({
     });
   };
 
+  const mapHint = bridgeReady
+    ? 'Click anywhere on the map to send a goal through the bridge.'
+    : 'Bridge offline. Click anywhere to preview a goal while the rest of the UI stays browseable.';
+
+  const mapCommandNote = mapStatusMessage ?? (
+    bridgeReady
+      ? 'Live controls are enabled. Use Recenter to jump back to ego and Reset To Map Center to teleport the fake vehicle.'
+      : 'Recenter still works in offline mode. Follow Ego and vehicle reset will enable once live ego state is available.'
+  );
+  const followButtonActive = followEgo && Boolean(bridgeState);
+
   return (
     <section className="map-shell">
       <div ref={mapContainerRef} className="map-canvas" />
@@ -318,14 +402,15 @@ export function MapView({
           </span>
         </div>
         <p className="map-hint">
-          Click anywhere on the map to send a goal through the bridge.
+          {mapHint}
         </p>
       </div>
       <div className="map-overlay map-overlay--top-right">
         <div className="button-stack">
           <button
-            className={`action-button${followEgo ? ' action-button--active' : ''}`}
+            className={`action-button${followButtonActive ? ' action-button--active' : ''}`}
             type="button"
+            disabled={!bridgeState}
             onClick={() => {
               setFollowEgo((current) => {
                 const next = !current;
@@ -336,19 +421,25 @@ export function MapView({
               });
             }}
           >
-            {followEgo ? 'Pause Follow' : 'Follow Ego'}
+            {followButtonActive ? 'Pause Follow' : 'Follow Ego'}
           </button>
           <button className="action-button" type="button" onClick={centerOnEgo}>
-            Center Ego
+            Recenter
           </button>
           <button
             className="action-button action-button--ghost"
             type="button"
             onClick={resetVehicleToMapCenter}
+            disabled={!bridgeReady}
           >
             Reset To Map Center
           </button>
         </div>
+      </div>
+      <div className="map-overlay map-overlay--bottom-left">
+        <p className={`map-status-note${bridgeReady ? '' : ' map-status-note--warning'}`}>
+          {mapCommandNote}
+        </p>
       </div>
     </section>
   );

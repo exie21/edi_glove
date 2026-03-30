@@ -23,9 +23,10 @@ export default function App() {
     resetVehicle,
   } = useBridgeState();
 
+  const bridgeReady = connectionStatus === 'connected';
   const currentMode = bridgeState?.bridge.mode === 'auto' ? 'auto' : 'manual';
   const { keyState, manualCommand } = useKeyboardDrive(
-    currentMode === 'manual',
+    currentMode === 'manual' && bridgeReady,
     async (command) => {
       await setManualCommand(command);
     },
@@ -37,44 +38,52 @@ export default function App() {
         <MapView
           bridgeState={bridgeState}
           connectionStatus={connectionStatus}
+          bridgeReady={bridgeReady}
           overlayVisibility={overlayVisibility}
           onGoalPick={setGoal}
           onResetVehicle={resetVehicle}
         />
       </section>
       <aside className="app-shell__sidebar">
-        <BridgeStatusPanel
-          bridgeState={bridgeState}
-          connectionStatus={connectionStatus}
-          errorMessage={errorMessage}
-          lastCommandMessage={lastCommandMessage}
-        />
-        <ManualDrivePanel
-          mode={currentMode}
-          manualCommand={manualCommand}
-          keyState={keyState}
-          onModeChange={setMode}
-          onResetToOrigin={async () => {
-            await resetVehicle({
-              x_m: 0,
-              y_m: 0,
-              speed_mps: 0,
-              heading_deg: 90,
-            });
-          }}
-        />
-        <TelemetryPanel bridgeState={bridgeState} />
-        <GoalPanel bridgeState={bridgeState} onGoalSubmit={setGoal} />
-        <OverlayPanel
-          bridgeState={bridgeState}
-          overlayVisibility={overlayVisibility}
-          onToggleOverlay={(overlayKey) => {
-            setOverlayVisibility((current) => ({
-              ...current,
-              [overlayKey]: !current[overlayKey],
-            }));
-          }}
-        />
+        <div className="app-shell__sidebar-scroll">
+          <BridgeStatusPanel
+            bridgeState={bridgeState}
+            connectionStatus={connectionStatus}
+            errorMessage={errorMessage}
+            lastCommandMessage={lastCommandMessage}
+          />
+          <ManualDrivePanel
+            bridgeReady={bridgeReady}
+            mode={currentMode}
+            manualCommand={manualCommand}
+            keyState={keyState}
+            onModeChange={setMode}
+            onResetToOrigin={async () => {
+              await resetVehicle({
+                x_m: 0,
+                y_m: 0,
+                speed_mps: 0,
+                heading_deg: 90,
+              });
+            }}
+          />
+          <TelemetryPanel bridgeState={bridgeState} />
+          <GoalPanel
+            bridgeState={bridgeState}
+            bridgeReady={bridgeReady}
+            onGoalSubmit={setGoal}
+          />
+          <OverlayPanel
+            bridgeState={bridgeState}
+            overlayVisibility={overlayVisibility}
+            onToggleOverlay={(overlayKey) => {
+              setOverlayVisibility((current) => ({
+                ...current,
+                [overlayKey]: !current[overlayKey],
+              }));
+            }}
+          />
+        </div>
       </aside>
     </main>
   );
