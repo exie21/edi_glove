@@ -3,6 +3,7 @@ import type {
   CommandAck,
   GoalPayload,
   ManualCommand,
+  MissionStartPayload,
   ModePayload,
   ResetVehiclePayload,
 } from '../types/bridge';
@@ -76,5 +77,21 @@ export async function resetVehicle(
   return request<CommandAck>('/api/v1/vehicle/reset', {
     method: 'POST',
     body: JSON.stringify(payload),
+  });
+}
+
+export async function startMission(
+  payload: MissionStartPayload,
+): Promise<CommandAck> {
+  return request<CommandAck>('/api/v1/mission/start', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function clearMission(): Promise<CommandAck> {
+  return request<CommandAck>('/api/v1/mission/clear', {
+    method: 'POST',
+    body: JSON.stringify({}),
   });
 }

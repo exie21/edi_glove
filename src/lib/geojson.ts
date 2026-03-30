@@ -40,7 +40,9 @@ export function pointFeatureCollection(
     features: [
       {
         type: 'Feature',
-        properties: {},
+        properties: {
+          label: 'G',
+        },
         geometry: {
           type: 'Point',
           coordinates: [goal.goal_lon, goal.goal_lat],

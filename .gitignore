@@ -4,4 +4,6 @@ dist
 .env.local
 .env.*.local
 coverage
-
+*.tsbuildinfo
+vite.config.js
+vite.config.d.ts

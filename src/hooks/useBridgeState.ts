@@ -1,16 +1,19 @@
 import { startTransition, useEffect, useRef, useState } from 'react';
 
 import {
+  clearMission,
   fetchBridgeState,
   resetVehicle,
   setGoal,
   setManualCommand,
   setMode,
+  startMission,
 } from '../lib/bridgeApi';
 import type {
   BridgeState,
   GoalPayload,
   ManualCommand,
+  MissionStartPayload,
   ResetVehiclePayload,
 } from '../types/bridge';
 
@@ -65,6 +68,11 @@ export function useBridgeState() {
     description: string,
     runner: () => Promise<unknown>,
   ) => {
+    if (mountedRef.current) {
+      setErrorMessage(null);
+      setLastCommandMessage(null);
+    }
+
     try {
       await runner();
       if (!mountedRef.current) {
@@ -84,6 +92,7 @@ export function useBridgeState() {
       if (!mountedRef.current) {
         return;
       }
+      setLastCommandMessage(null);
       setErrorMessage(error instanceof Error ? error.message : 'Command failed.');
     }
   };
@@ -108,6 +117,14 @@ export function useBridgeState() {
     resetVehicle: async (payload: ResetVehiclePayload) => {
       await runCommand('Vehicle reset sent to bridge.', () => resetVehicle(payload));
     },
+    startMission: async (payload: MissionStartPayload) => {
+      await runCommand(
+        `Waypoint mission started with ${payload.waypoints.length} points.`,
+        () => startMission(payload),
+      );
+    },
+    clearMission: async () => {
+      await runCommand('Waypoint mission cleared on the bridge.', () => clearMission());
+    },
   };
 }
-

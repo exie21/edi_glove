@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import maplibregl, {
   type GeoJSONSource,
+  type LngLatBoundsLike,
   type Map as MapLibreMap,
   type Marker,
   type StyleSpecification,
@@ -11,17 +12,21 @@ import {
   MAP_PRESETS,
   type MapPresetKey,
 } from '../../lib/mapPresets';
+import { waypointFeatureCollection } from '../../lib/waypoints';
 import type {
   BridgeGoal,
   BridgeState,
   GoalPayload,
   ResetVehiclePayload,
 } from '../../types/bridge';
-import type { OverlayVisibility } from '../../types/ui';
+import type {
+  MapClickMode,
+  OverlayVisibility,
+  Waypoint,
+} from '../../types/ui';
 
 const FOLLOW_EGO_MIN_DELTA_DEG = 1e-6;
-const MIN_MAP_ZOOM = 12;
-const MAX_MAP_ZOOM = 20;
+const MAX_SOURCE_ZOOM = 19;
 
 function buildSatelliteStyle(): Record<string, unknown> {
   return {
@@ -33,8 +38,8 @@ function buildSatelliteStyle(): Record<string, unknown> {
           'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
         ],
         tileSize: 256,
-        minzoom: MIN_MAP_ZOOM,
-        maxzoom: MAX_MAP_ZOOM,
+        minzoom: 0,
+        maxzoom: MAX_SOURCE_ZOOM,
         attribution: 'Esri',
       },
     },
@@ -43,6 +48,9 @@ function buildSatelliteStyle(): Record<string, unknown> {
         id: 'esri_satellite',
         type: 'raster',
         source: 'esri_satellite',
+        paint: {
+          'raster-resampling': 'linear',
+        },
       },
     ],
   };
@@ -72,6 +80,10 @@ interface MapViewProps {
   bridgeReady: boolean;
   mapPresetKey: MapPresetKey;
   onMapPresetChange: (preset: MapPresetKey) => void;
+  clickMode: MapClickMode;
+  onClickModeChange: (mode: MapClickMode) => void;
+  waypoints: Waypoint[];
+  onAddWaypoint: (latitude_deg: number, longitude_deg: number) => void;
   overlayVisibility: OverlayVisibility;
   onGoalPick: (goal: GoalPayload) => Promise<void>;
   onResetVehicle: (payload: ResetVehiclePayload) => Promise<void>;
@@ -83,6 +95,10 @@ export function MapView({
   bridgeReady,
   mapPresetKey,
   onMapPresetChange,
+  clickMode,
+  onClickModeChange,
+  waypoints,
+  onAddWaypoint,
   overlayVisibility,
   onGoalPick,
   onResetVehicle,
@@ -98,14 +114,49 @@ export function MapView({
   const lastFollowCenterRef = useRef<{ lat: number; lon: number } | null>(null);
   const latestBridgeStateRef = useRef<BridgeState | null>(bridgeState);
   const latestBridgeReadyRef = useRef(bridgeReady);
+  const latestClickModeRef = useRef<MapClickMode>(clickMode);
   const latestGoalHandlerRef = useRef(onGoalPick);
+  const latestAddWaypointRef = useRef(onAddWaypoint);
   const latestOverlayVisibilityRef = useRef(overlayVisibility);
+  const latestWaypointsRef = useRef(waypoints);
   const activePreset = MAP_PRESETS[mapPresetKey];
+  const hasLiveBridgeState = bridgeReady && Boolean(bridgeState);
+  const followButtonActive = followEgo && hasLiveBridgeState;
+
+  const activateWaypointGoal = (waypoint: Waypoint) => {
+    const waypointLabel = waypoint.label ?? 'Waypoint';
+    const goal: BridgeGoal = {
+      goal_lat: waypoint.latitude_deg,
+      goal_lon: waypoint.longitude_deg,
+      goal_heading: latestBridgeStateRef.current?.ego.heading_deg ?? 0,
+    };
+
+    setPreviewGoal(goal);
+
+    if (!latestBridgeReadyRef.current) {
+      setMapStatusMessage(`${waypointLabel} selected as a local goal preview.`);
+      return;
+    }
+
+    setMapStatusMessage(`Routing to ${waypointLabel}...`);
+    void latestGoalHandlerRef.current(goal)
+      .then(() => {
+        setMapStatusMessage(`${waypointLabel} sent as the active goal.`);
+      })
+      .catch((error) => {
+        setMapStatusMessage(
+          error instanceof Error ? error.message : `Routing to ${waypointLabel} failed.`,
+        );
+      });
+  };
 
   latestBridgeStateRef.current = bridgeState;
   latestBridgeReadyRef.current = bridgeReady;
+  latestClickModeRef.current = clickMode;
   latestGoalHandlerRef.current = onGoalPick;
+  latestAddWaypointRef.current = onAddWaypoint;
   latestOverlayVisibilityRef.current = overlayVisibility;
+  latestWaypointsRef.current = waypoints;
 
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) {
@@ -120,8 +171,9 @@ export function MapView({
       zoom: activePreset.zoom,
       pitch: activePreset.pitch,
       bearing: 0,
-      minZoom: MIN_MAP_ZOOM,
-      maxZoom: MAX_MAP_ZOOM,
+      minZoom: activePreset.minZoom,
+      maxZoom: activePreset.maxZoom,
+      maxBounds: activePreset.bounds as LngLatBoundsLike,
       antialias: true,
       renderWorldCopies: false,
     });
@@ -175,6 +227,10 @@ export function MapView({
         type: 'geojson',
         data: pointFeatureCollection(null),
       });
+      map.addSource('waypoints-source', {
+        type: 'geojson',
+        data: waypointFeatureCollection([]),
+      });
 
       map.addLayer({
         id: 'route-layer',
@@ -222,17 +278,160 @@ export function MapView({
         type: 'circle',
         source: 'goal-source',
         paint: {
-          'circle-radius': 8,
-          'circle-color': '#ffe28a',
-          'circle-stroke-color': '#201304',
-          'circle-stroke-width': 2,
+          'circle-radius': [
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            15,
+            3.2,
+            18.5,
+            5.3,
+            20.5,
+            7,
+          ],
+          'circle-color': '#ffcf78',
+          'circle-stroke-color': '#071018',
+          'circle-stroke-width': [
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            15,
+            0.9,
+            20.5,
+            1.45,
+          ],
+          'circle-pitch-alignment': 'map',
+          'circle-pitch-scale': 'map',
+        },
+      });
+      map.addLayer({
+        id: 'goal-label-layer',
+        type: 'symbol',
+        source: 'goal-source',
+        layout: {
+          'text-field': ['get', 'label'],
+          'text-size': [
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            15,
+            8,
+            18.5,
+            9.4,
+            20.5,
+            10.5,
+          ],
+          'text-font': ['Open Sans Bold'],
+          'text-anchor': 'center',
+          'text-allow-overlap': true,
+          'text-ignore-placement': true,
+        },
+        paint: {
+          'text-color': '#071018',
+          'text-halo-color': 'rgba(255, 255, 255, 0.15)',
+          'text-halo-width': 0.6,
+        },
+      });
+      map.addLayer({
+        id: 'waypoint-layer',
+        type: 'circle',
+        source: 'waypoints-source',
+        paint: {
+          'circle-radius': [
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            15,
+            3,
+            18.5,
+            5,
+            20.5,
+            6.4,
+          ],
+          'circle-color': '#f4f0da',
+          'circle-stroke-color': '#071018',
+          'circle-stroke-width': [
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            15,
+            0.8,
+            20.5,
+            1.25,
+          ],
+          'circle-pitch-alignment': 'map',
+          'circle-pitch-scale': 'map',
+        },
+      });
+      map.addLayer({
+        id: 'waypoint-label-layer',
+        type: 'symbol',
+        source: 'waypoints-source',
+        layout: {
+          'text-field': ['get', 'label'],
+          'text-size': [
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            15,
+            7.8,
+            18.5,
+            9.1,
+            20.5,
+            10.2,
+          ],
+          'text-font': ['Open Sans Bold'],
+          'text-anchor': 'center',
+          'text-allow-overlap': true,
+          'text-ignore-placement': true,
+        },
+        paint: {
+          'text-color': '#071018',
+          'text-halo-color': 'rgba(255, 255, 255, 0.18)',
+          'text-halo-width': 0.55,
         },
       });
 
       syncOverlayLayerVisibility(map, latestOverlayVisibilityRef.current);
+      map.on('mouseenter', 'waypoint-layer', setWaypointCursor);
+      map.on('mouseleave', 'waypoint-layer', clearWaypointCursor);
+      map.on('mouseenter', 'waypoint-label-layer', setWaypointCursor);
+      map.on('mouseleave', 'waypoint-label-layer', clearWaypointCursor);
     });
 
+    const setWaypointCursor = () => {
+      map.getCanvas().style.cursor = 'pointer';
+    };
+    const clearWaypointCursor = () => {
+      map.getCanvas().style.cursor = '';
+    };
+
     map.on('click', (event) => {
+      const clickedWaypointFeature = map.queryRenderedFeatures(event.point, {
+        layers: ['waypoint-layer', 'waypoint-label-layer'],
+      })[0];
+
+      if (clickedWaypointFeature) {
+        const waypointId =
+          typeof clickedWaypointFeature.properties?.id === 'string'
+            ? clickedWaypointFeature.properties.id
+            : null;
+        const waypoint = waypointId
+          ? latestWaypointsRef.current.find((candidate) => candidate.id === waypointId)
+          : undefined;
+
+        if (waypoint) {
+          activateWaypointGoal(waypoint);
+          return;
+        }
+      }
+
+      if (latestClickModeRef.current === 'waypoint') {
+        latestAddWaypointRef.current(event.lngLat.lat, event.lngLat.lng);
+        setMapStatusMessage('Waypoint added to the map.');
+        return;
+      }
+
       const goal: BridgeGoal = {
         goal_lat: event.lngLat.lat,
         goal_lon: event.lngLat.lng,
@@ -263,6 +462,10 @@ export function MapView({
     return () => {
       resizeObserver?.disconnect();
       window.removeEventListener('resize', resizeMap);
+      map.off('mouseenter', 'waypoint-layer', setWaypointCursor);
+      map.off('mouseleave', 'waypoint-layer', clearWaypointCursor);
+      map.off('mouseenter', 'waypoint-label-layer', setWaypointCursor);
+      map.off('mouseleave', 'waypoint-label-layer', clearWaypointCursor);
       egoMarkerRef.current?.remove();
       egoMarkerRef.current = null;
       map.remove();
@@ -282,6 +485,9 @@ export function MapView({
     const preset = MAP_PRESETS[mapPresetKey];
     setFollowEgo(false);
     setMapStatusMessage(`Viewing ${preset.label}.`);
+    map.setMinZoom(preset.minZoom);
+    map.setMaxZoom(preset.maxZoom);
+    map.setMaxBounds(preset.bounds as LngLatBoundsLike);
     map.easeTo({
       center: [preset.center.lon, preset.center.lat],
       zoom: preset.zoom,
@@ -307,12 +513,14 @@ export function MapView({
     const predictedSource = map.getSource('predicted-source') as GeoJSONSource | undefined;
     const debugSource = map.getSource('debug-source') as GeoJSONSource | undefined;
     const goalSource = map.getSource('goal-source') as GeoJSONSource | undefined;
+    const waypointSource = map.getSource('waypoints-source') as GeoJSONSource | undefined;
 
     routeSource?.setData(lineFeatureCollection(bridgeState.route.points));
     trajectorySource?.setData(lineFeatureCollection(bridgeState.reference_trajectory.points));
     predictedSource?.setData(lineFeatureCollection(bridgeState.predicted_path.points));
     debugSource?.setData(lineFeatureCollection(bridgeState.debug_reference_path.points));
     goalSource?.setData(pointFeatureCollection(bridgeState.goal_status.goal ?? previewGoal));
+    waypointSource?.setData(waypointFeatureCollection(waypoints));
 
     egoMarkerRef.current
       ?.setLngLat([bridgeState.ego.longitude_deg, bridgeState.ego.latitude_deg])
@@ -346,24 +554,26 @@ export function MapView({
         };
       }
     }
-  }, [bridgeState, followEgo, previewGoal]);
+  }, [bridgeState, followEgo, previewGoal, waypoints]);
 
   useEffect(() => {
     const map = mapRef.current;
     const goalSource = map?.getSource('goal-source') as GeoJSONSource | undefined;
+    const waypointSource = map?.getSource('waypoints-source') as GeoJSONSource | undefined;
     if (!goalSource) {
       return;
     }
     goalSource.setData(pointFeatureCollection(bridgeState?.goal_status.goal ?? previewGoal));
-  }, [bridgeState?.goal_status.goal, previewGoal]);
+    waypointSource?.setData(waypointFeatureCollection(waypoints));
+  }, [bridgeState?.goal_status.goal, previewGoal, waypoints]);
 
   useEffect(() => {
     const markerElement = egoMarkerRef.current?.getElement();
     if (!markerElement) {
       return;
     }
-    markerElement.classList.toggle('ego-marker--inactive', !bridgeState);
-  }, [bridgeState]);
+    markerElement.classList.toggle('ego-marker--inactive', !bridgeReady || !bridgeState);
+  }, [bridgeReady, bridgeState]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -378,17 +588,17 @@ export function MapView({
       return;
     }
 
-    const targetCenter = bridgeState
+    const targetCenter = hasLiveBridgeState && bridgeState
       ? [bridgeState.ego.longitude_deg, bridgeState.ego.latitude_deg] as [number, number]
       : [activePreset.center.lon, activePreset.center.lat] as [number, number];
 
     mapRef.current.easeTo({
       center: targetCenter,
-      zoom: Math.max(mapRef.current.getZoom(), bridgeState ? 18 : activePreset.zoom),
+      zoom: Math.max(mapRef.current.getZoom(), hasLiveBridgeState ? 18 : activePreset.zoom),
       pitch: activePreset.pitch,
       duration: 700,
     });
-    if (bridgeState) {
+    if (hasLiveBridgeState && bridgeState) {
       lastFollowCenterRef.current = {
         lat: bridgeState.ego.latitude_deg,
         lon: bridgeState.ego.longitude_deg,
@@ -397,7 +607,7 @@ export function MapView({
   };
 
   const resetVehicleToMapCenter = () => {
-    if (!mapRef.current) {
+    if (!mapRef.current || !bridgeReady) {
       return;
     }
     const center = mapRef.current.getCenter();
@@ -406,20 +616,38 @@ export function MapView({
       longitude_deg: center.lng,
       speed_mps: 0,
       heading_deg: bridgeState?.ego.heading_deg ?? 90,
-    });
+    })
+      .then(() => {
+        setMapStatusMessage('Vehicle reset to the current map center.');
+      })
+      .catch((error) => {
+        setMapStatusMessage(
+          error instanceof Error ? error.message : 'Vehicle reset failed.',
+        );
+      });
   };
 
   const mapHint = bridgeReady
-    ? 'Click anywhere on the map to send a goal through the bridge.'
-    : 'Bridge offline. Click anywhere to preview a goal while the rest of the UI stays browseable.';
+    ? `Bridge connected on ${activePreset.label}. ${
+        clickMode === 'waypoint'
+          ? 'Click blank map space to save a labeled waypoint. Click any saved waypoint later to route there from the current ego pose.'
+          : 'Click anywhere to send a goal through the bridge.'
+      }`
+    : bridgeState
+      ? clickMode === 'waypoint'
+        ? 'Bridge disconnected. Last known ego telemetry is still on screen, and waypoint clicks only update the local draft or preview.'
+        : 'Bridge disconnected. Last known telemetry is still on screen, and map clicks only preview a goal locally.'
+    : clickMode === 'waypoint'
+      ? 'Bridge offline. Click anywhere to drop labeled waypoints on the map.'
+      : 'Bridge offline. Click anywhere to preview a goal while the rest of the UI stays browseable.';
 
   const mapCommandNote = mapStatusMessage ?? (
-    bridgeReady
+    clickMode === 'waypoint'
+      ? 'Waypoint mode is active. Blank-map clicks save reusable labels like A, B, and C. Clicking an existing waypoint pin sends that saved point as the next goal.'
+      : bridgeReady
       ? 'Live controls are enabled. Use Recenter to jump back to ego and Reset To Map Center to teleport the fake vehicle.'
       : 'Recenter still works in offline mode. Follow Ego and vehicle reset will enable once live ego state is available.'
   );
-  const followButtonActive = followEgo && Boolean(bridgeState);
-
   return (
     <section className="map-shell">
       <div ref={mapContainerRef} className="map-canvas" />
@@ -440,6 +668,7 @@ export function MapView({
                 key={preset.key}
                 className={`map-switcher__button${active ? ' map-switcher__button--active' : ''}`}
                 type="button"
+                disabled={bridgeReady}
                 onClick={() => {
                   onMapPresetChange(preset.key);
                 }}
@@ -450,6 +679,26 @@ export function MapView({
             );
           })}
         </div>
+        <div className="map-mode-switcher">
+          <button
+            className={`map-mode-switcher__button${clickMode === 'goal' ? ' map-mode-switcher__button--active' : ''}`}
+            type="button"
+            onClick={() => {
+              onClickModeChange('goal');
+            }}
+          >
+            Goal Mode
+          </button>
+          <button
+            className={`map-mode-switcher__button${clickMode === 'waypoint' ? ' map-mode-switcher__button--active' : ''}`}
+            type="button"
+            onClick={() => {
+              onClickModeChange('waypoint');
+            }}
+          >
+            Waypoint Mode
+          </button>
+        </div>
         <p className="map-hint">
           {mapHint}
         </p>
@@ -459,7 +708,7 @@ export function MapView({
           <button
             className={`action-button${followButtonActive ? ' action-button--active' : ''}`}
             type="button"
-            disabled={!bridgeState}
+            disabled={!hasLiveBridgeState}
             onClick={() => {
               setFollowEgo((current) => {
                 const next = !current;

@@ -17,6 +17,7 @@ export function BridgeStatusPanel({
   lastCommandMessage,
 }: BridgeStatusPanelProps) {
   const displayName = bridgeState?.display_name ?? 'Ediglove';
+  const showingCachedState = connectionStatus === 'error' && Boolean(bridgeState);
 
   return (
     <PanelCard
@@ -57,7 +58,12 @@ export function BridgeStatusPanel({
           keys are held.
         </p>
       )}
+      {showingCachedState ? (
+        <p className="panel-note panel-note--warning">
+          Bridge polling is down. The telemetry still on screen is the last snapshot and may be
+          stale.
+        </p>
+      ) : null}
     </PanelCard>
   );
 }
-

@@ -44,6 +44,7 @@ export interface BridgeInfo {
   service_ready: boolean;
   api_host: string;
   api_port: number;
+  map_preset?: string;
 }
 
 export interface EgoState {
@@ -73,6 +74,27 @@ export interface ControllerCommand {
   age_sec: number | null;
 }
 
+export interface MissionWaypoint {
+  id?: string;
+  label?: string;
+  goal_lat: number;
+  goal_lon: number;
+  goal_heading?: number;
+}
+
+export interface MissionStatus {
+  state: string;
+  message: string;
+  active: boolean;
+  waypoint_count: number;
+  completed_count: number;
+  current_index: number | null;
+  current_label: string | null;
+  current_waypoint: MissionWaypoint | null;
+  reach_radius_m: number;
+  waypoints: MissionWaypoint[];
+}
+
 export interface BridgeState {
   api_version: string;
   display_name: string;
@@ -86,6 +108,7 @@ export interface BridgeState {
   reference_trajectory: BridgePathSnapshot;
   predicted_path: BridgePathSnapshot;
   debug_reference_path: BridgePathSnapshot;
+  mission: MissionStatus;
 }
 
 export interface ModePayload {
@@ -107,6 +130,11 @@ export interface ResetVehiclePayload {
   longitude_deg?: number;
 }
 
+export interface MissionStartPayload {
+  auto_mode?: boolean;
+  waypoints: MissionWaypoint[];
+}
+
 export interface CommandAck {
   accepted: boolean;
   command?: string;
@@ -120,4 +148,3 @@ export interface KeyboardState {
   right: boolean;
   hardBrake: boolean;
 }
-

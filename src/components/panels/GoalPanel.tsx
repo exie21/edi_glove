@@ -71,6 +71,16 @@ export function GoalPanel({
       return;
     }
 
+    if (parsedLat < -90 || parsedLat > 90) {
+      setFormError('Goal latitude must stay between -90 and 90 degrees.');
+      return;
+    }
+
+    if (parsedLon < -180 || parsedLon > 180) {
+      setFormError('Goal longitude must stay between -180 and 180 degrees.');
+      return;
+    }
+
     setFormError(null);
     await onGoalSubmit({
       goal_lat: parsedLat,

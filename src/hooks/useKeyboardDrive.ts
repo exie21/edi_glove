@@ -16,6 +16,20 @@ const EMPTY_KEYS: KeyboardState = {
   hardBrake: false,
 };
 
+function isTypingTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+
+  const tagName = target.tagName;
+  return (
+    tagName === 'INPUT' ||
+    tagName === 'TEXTAREA' ||
+    tagName === 'SELECT' ||
+    target.isContentEditable
+  );
+}
+
 function buildCommand(keys: KeyboardState): ManualCommand {
   const throttle = keys.forward ? 1 : 0;
   const brake = keys.hardBrake ? 1 : keys.brake ? 0.7 : 0;
@@ -55,7 +69,15 @@ export function useKeyboardDrive(
       setKeyState(nextKeys);
     };
 
+    const resetState = () => {
+      updateState(EMPTY_KEYS);
+    };
+
     const onKeyDown = (event: KeyboardEvent) => {
+      if (event.altKey || event.ctrlKey || event.metaKey || isTypingTarget(event.target)) {
+        return;
+      }
+
       if (event.repeat) {
         return;
       }
@@ -84,6 +106,10 @@ export function useKeyboardDrive(
     };
 
     const onKeyUp = (event: KeyboardEvent) => {
+      if (event.altKey || event.ctrlKey || event.metaKey) {
+        return;
+      }
+
       updateState({
         forward:
           (event.code === 'KeyW' || event.code === 'ArrowUp')
@@ -107,6 +133,7 @@ export function useKeyboardDrive(
 
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', resetState);
 
     const timerId = window.setInterval(() => {
       void callbackRef.current(commandRef.current);
@@ -115,6 +142,7 @@ export function useKeyboardDrive(
     return () => {
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('blur', resetState);
       window.clearInterval(timerId);
       keysRef.current = EMPTY_KEYS;
       commandRef.current = ZERO_COMMAND;
