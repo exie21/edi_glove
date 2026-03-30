@@ -7,6 +7,10 @@ import maplibregl, {
 } from 'maplibre-gl';
 
 import { lineFeatureCollection, pointFeatureCollection } from '../../lib/geojson';
+import {
+  MAP_PRESETS,
+  type MapPresetKey,
+} from '../../lib/mapPresets';
 import type {
   BridgeGoal,
   BridgeState,
@@ -15,11 +19,9 @@ import type {
 } from '../../types/bridge';
 import type { OverlayVisibility } from '../../types/ui';
 
-const DEFAULT_CENTER = {
-  lat: Number(import.meta.env.VITE_DEFAULT_CENTER_LAT ?? 42.3008428),
-  lon: Number(import.meta.env.VITE_DEFAULT_CENTER_LON ?? -83.6982926),
-};
 const FOLLOW_EGO_MIN_DELTA_DEG = 1e-6;
+const MIN_MAP_ZOOM = 12;
+const MAX_MAP_ZOOM = 20;
 
 function buildSatelliteStyle(): Record<string, unknown> {
   return {
@@ -31,6 +33,8 @@ function buildSatelliteStyle(): Record<string, unknown> {
           'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
         ],
         tileSize: 256,
+        minzoom: MIN_MAP_ZOOM,
+        maxzoom: MAX_MAP_ZOOM,
         attribution: 'Esri',
       },
     },
@@ -66,6 +70,8 @@ interface MapViewProps {
   bridgeState: BridgeState | null;
   connectionStatus: 'loading' | 'connected' | 'error';
   bridgeReady: boolean;
+  mapPresetKey: MapPresetKey;
+  onMapPresetChange: (preset: MapPresetKey) => void;
   overlayVisibility: OverlayVisibility;
   onGoalPick: (goal: GoalPayload) => Promise<void>;
   onResetVehicle: (payload: ResetVehiclePayload) => Promise<void>;
@@ -75,6 +81,8 @@ export function MapView({
   bridgeState,
   connectionStatus,
   bridgeReady,
+  mapPresetKey,
+  onMapPresetChange,
   overlayVisibility,
   onGoalPick,
   onResetVehicle,
@@ -92,6 +100,7 @@ export function MapView({
   const latestBridgeReadyRef = useRef(bridgeReady);
   const latestGoalHandlerRef = useRef(onGoalPick);
   const latestOverlayVisibilityRef = useRef(overlayVisibility);
+  const activePreset = MAP_PRESETS[mapPresetKey];
 
   latestBridgeStateRef.current = bridgeState;
   latestBridgeReadyRef.current = bridgeReady;
@@ -107,11 +116,14 @@ export function MapView({
     const map = new maplibregl.Map({
       container,
       style: buildSatelliteStyle() as StyleSpecification,
-      center: [DEFAULT_CENTER.lon, DEFAULT_CENTER.lat],
-      zoom: 17.4,
-      pitch: 48,
+      center: [activePreset.center.lon, activePreset.center.lat],
+      zoom: activePreset.zoom,
+      pitch: activePreset.pitch,
       bearing: 0,
+      minZoom: MIN_MAP_ZOOM,
+      maxZoom: MAX_MAP_ZOOM,
       antialias: true,
+      renderWorldCopies: false,
     });
 
     map.addControl(new maplibregl.NavigationControl({ showCompass: true }), 'top-right');
@@ -125,7 +137,7 @@ export function MapView({
       rotationAlignment: 'map',
       pitchAlignment: 'map',
     })
-      .setLngLat([DEFAULT_CENTER.lon, DEFAULT_CENTER.lat])
+      .setLngLat([activePreset.center.lon, activePreset.center.lat])
       .addTo(map);
 
     const resizeMap = () => {
@@ -262,6 +274,23 @@ export function MapView({
   }, []);
 
   useEffect(() => {
+    const map = mapRef.current;
+    if (!map) {
+      return;
+    }
+
+    const preset = MAP_PRESETS[mapPresetKey];
+    setFollowEgo(false);
+    setMapStatusMessage(`Viewing ${preset.label}.`);
+    map.easeTo({
+      center: [preset.center.lon, preset.center.lat],
+      zoom: preset.zoom,
+      pitch: preset.pitch,
+      duration: 900,
+    });
+  }, [mapPresetKey]);
+
+  useEffect(() => {
     if (bridgeState?.goal_status.goal) {
       setPreviewGoal(null);
     }
@@ -351,11 +380,12 @@ export function MapView({
 
     const targetCenter = bridgeState
       ? [bridgeState.ego.longitude_deg, bridgeState.ego.latitude_deg] as [number, number]
-      : [DEFAULT_CENTER.lon, DEFAULT_CENTER.lat] as [number, number];
+      : [activePreset.center.lon, activePreset.center.lat] as [number, number];
 
     mapRef.current.easeTo({
       center: targetCenter,
-      zoom: Math.max(mapRef.current.getZoom(), bridgeState ? 18 : 17.4),
+      zoom: Math.max(mapRef.current.getZoom(), bridgeState ? 18 : activePreset.zoom),
+      pitch: activePreset.pitch,
       duration: 700,
     });
     if (bridgeState) {
@@ -400,6 +430,25 @@ export function MapView({
           <span className={`status-pill status-pill--${connectionStatus}`}>
             {connectionStatus}
           </span>
+        </div>
+        <div className="map-switcher">
+          {(['mcity', 'columbus'] as const).map((presetKey) => {
+            const preset = MAP_PRESETS[presetKey];
+            const active = presetKey === mapPresetKey;
+            return (
+              <button
+                key={preset.key}
+                className={`map-switcher__button${active ? ' map-switcher__button--active' : ''}`}
+                type="button"
+                onClick={() => {
+                  onMapPresetChange(preset.key);
+                }}
+              >
+                <span>{preset.label}</span>
+                <small>{preset.description}</small>
+              </button>
+            );
+          })}
         </div>
         <p className="map-hint">
           {mapHint}

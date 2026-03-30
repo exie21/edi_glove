@@ -1,6 +1,14 @@
+import type {
+  FeatureCollection,
+  LineString,
+  Point,
+} from 'geojson';
+
 import type { BridgeGoal, PathPoint } from '../types/bridge';
 
-export function lineFeatureCollection(points: PathPoint[]): Record<string, unknown> {
+export function lineFeatureCollection(
+  points: PathPoint[],
+): FeatureCollection<LineString> {
   return {
     type: 'FeatureCollection',
     features: points.length >= 2
@@ -23,7 +31,7 @@ export function lineFeatureCollection(points: PathPoint[]): Record<string, unkno
 
 export function pointFeatureCollection(
   goal: BridgeGoal | null | undefined,
-): Record<string, unknown> {
+): FeatureCollection<Point> {
   if (!goal) {
     return { type: 'FeatureCollection', features: [] };
   }
@@ -41,4 +49,3 @@ export function pointFeatureCollection(
     ],
   };
 }
-

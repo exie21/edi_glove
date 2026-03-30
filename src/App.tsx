@@ -8,10 +8,12 @@ import { GoalPanel } from './components/panels/GoalPanel';
 import { ManualDrivePanel } from './components/panels/ManualDrivePanel';
 import { OverlayPanel } from './components/panels/OverlayPanel';
 import { TelemetryPanel } from './components/panels/TelemetryPanel';
+import { getDefaultMapPreset } from './lib/mapPresets';
 import { DEFAULT_OVERLAY_VISIBILITY } from './types/ui';
 
 export default function App() {
   const [overlayVisibility, setOverlayVisibility] = useState(DEFAULT_OVERLAY_VISIBILITY);
+  const [mapPresetKey, setMapPresetKey] = useState(getDefaultMapPreset().key);
   const {
     bridgeState,
     connectionStatus,
@@ -39,6 +41,8 @@ export default function App() {
           bridgeState={bridgeState}
           connectionStatus={connectionStatus}
           bridgeReady={bridgeReady}
+          mapPresetKey={mapPresetKey}
+          onMapPresetChange={setMapPresetKey}
           overlayVisibility={overlayVisibility}
           onGoalPick={setGoal}
           onResetVehicle={resetVehicle}

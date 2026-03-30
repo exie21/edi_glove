@@ -146,6 +146,37 @@ select {
   letter-spacing: 0.03em;
 }
 
+.map-switcher {
+  display: grid;
+  gap: 0.55rem;
+  margin-top: 0.7rem;
+}
+
+.map-switcher__button {
+  display: flex;
+  flex-direction: column;
+  gap: 0.18rem;
+  width: 100%;
+  padding: 0.8rem 0.95rem;
+  text-align: left;
+  color: var(--text-main);
+  background: rgba(7, 16, 24, 0.74);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0.85rem;
+  cursor: pointer;
+  backdrop-filter: blur(10px);
+}
+
+.map-switcher__button small {
+  color: var(--text-muted);
+  font-size: 0.76rem;
+}
+
+.map-switcher__button--active {
+  border-color: rgba(34, 215, 196, 0.34);
+  background: rgba(18, 34, 39, 0.86);
+}
+
 .map-hint {
   margin: 0.7rem 0 0;
   padding: 0.8rem 0.95rem;
