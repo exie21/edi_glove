@@ -6,6 +6,7 @@ import type {
   MissionStartPayload,
   ModePayload,
   ResetVehiclePayload,
+  SceneSyncPayload,
 } from '../types/bridge';
 
 const bridgeBaseUrl = (
@@ -93,5 +94,14 @@ export async function clearMission(): Promise<CommandAck> {
   return request<CommandAck>('/api/v1/mission/clear', {
     method: 'POST',
     body: JSON.stringify({}),
+  });
+}
+
+export async function syncSceneObjects(
+  payload: SceneSyncPayload,
+): Promise<CommandAck> {
+  return request<CommandAck>('/api/v1/editor/scene', {
+    method: 'POST',
+    body: JSON.stringify(payload),
   });
 }

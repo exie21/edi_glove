@@ -8,6 +8,7 @@ import {
   setManualCommand,
   setMode,
   startMission,
+  syncSceneObjects,
 } from '../lib/bridgeApi';
 import type {
   BridgeState,
@@ -15,6 +16,7 @@ import type {
   ManualCommand,
   MissionStartPayload,
   ResetVehiclePayload,
+  SceneSyncPayload,
 } from '../types/bridge';
 
 type ConnectionStatus = 'loading' | 'connected' | 'error';
@@ -125,6 +127,9 @@ export function useBridgeState() {
     },
     clearMission: async () => {
       await runCommand('Waypoint mission cleared on the bridge.', () => clearMission());
+    },
+    syncSceneObjects: async (payload: SceneSyncPayload) => {
+      await syncSceneObjects(payload);
     },
   };
 }

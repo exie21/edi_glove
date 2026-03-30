@@ -38,6 +38,7 @@ export default function App() {
     setManualCommand,
     setGoal,
     resetVehicle,
+    syncSceneObjects,
   } = useBridgeState();
 
   const bridgeReady = connectionStatus === 'connected';
@@ -55,6 +56,24 @@ export default function App() {
       setMapPresetKey(livePreset);
     }
   }, [bridgeState?.bridge.map_preset]);
+
+  useEffect(() => {
+    if (!bridgeReady) {
+      return;
+    }
+
+    void syncSceneObjects({
+      objects: sceneObjects.map((object) => ({
+        id: object.id,
+        kind: object.kind,
+        label: object.label,
+        latitude_deg: object.latitude_deg,
+        longitude_deg: object.longitude_deg,
+      })),
+    }).catch(() => {
+      // Polling already reports bridge connectivity; keep scene sync quiet here.
+    });
+  }, [bridgeReady, sceneObjects]);
 
   const addWaypoint = (latitude_deg: number, longitude_deg: number) => {
     setWaypoints((current) => {
@@ -152,6 +171,15 @@ export default function App() {
           />
           <EditorPanel
             bridgeReady={bridgeReady}
+            generatedWorldPath={
+              bridgeState?.scene.generated_mock_perception_world.path ?? null
+            }
+            generatedWorldError={
+              bridgeState?.scene.generated_mock_perception_world.last_error ?? null
+            }
+            liveScenePublishingEnabled={
+              bridgeState?.scene.publish_to_perception ?? false
+            }
             interactionMode={interactionMode}
             editorTool={editorTool}
             waypoints={waypoints}

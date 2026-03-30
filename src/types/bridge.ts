@@ -95,6 +95,37 @@ export interface MissionStatus {
   waypoints: MissionWaypoint[];
 }
 
+export interface BridgeSceneObject {
+  id: string;
+  kind: 'traffic_light' | 'barrel';
+  label: string;
+  latitude_deg: number;
+  longitude_deg: number;
+  trigger_radius_m: number;
+  min_trigger_radius_m: number;
+  height_m: number;
+  width_m: number;
+  elevation_m: number;
+  stopbar_offset_m?: number;
+  traffic_light_state?: string;
+}
+
+export interface GeneratedMockPerceptionWorldStatus {
+  path: string | null;
+  auto_write_enabled: boolean;
+  object_count: number;
+  last_written_at_sec: number | null;
+  last_error: string | null;
+}
+
+export interface SceneStatus {
+  object_count: number;
+  objects: BridgeSceneObject[];
+  publish_to_perception: boolean;
+  trigger_fov_deg: number;
+  generated_mock_perception_world: GeneratedMockPerceptionWorldStatus;
+}
+
 export interface BridgeState {
   api_version: string;
   display_name: string;
@@ -109,6 +140,7 @@ export interface BridgeState {
   predicted_path: BridgePathSnapshot;
   debug_reference_path: BridgePathSnapshot;
   mission: MissionStatus;
+  scene: SceneStatus;
 }
 
 export interface ModePayload {
@@ -133,6 +165,18 @@ export interface ResetVehiclePayload {
 export interface MissionStartPayload {
   auto_mode?: boolean;
   waypoints: MissionWaypoint[];
+}
+
+export interface SceneObjectPayload {
+  id: string;
+  kind: 'traffic_light' | 'barrel';
+  label: string;
+  latitude_deg: number;
+  longitude_deg: number;
+}
+
+export interface SceneSyncPayload {
+  objects: SceneObjectPayload[];
 }
 
 export interface CommandAck {
