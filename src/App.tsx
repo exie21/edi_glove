@@ -64,7 +64,7 @@ export default function App() {
           }}
         />
         <TelemetryPanel bridgeState={bridgeState} />
-        <GoalPanel bridgeState={bridgeState} />
+        <GoalPanel bridgeState={bridgeState} onGoalSubmit={setGoal} />
         <OverlayPanel
           bridgeState={bridgeState}
           overlayVisibility={overlayVisibility}

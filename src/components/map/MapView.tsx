@@ -1,5 +1,10 @@
-import { useEffect, useRef } from 'react';
-import maplibregl from 'maplibre-gl';
+import { useEffect, useRef, useState } from 'react';
+import maplibregl, {
+  type GeoJSONSource,
+  type Map as MapLibreMap,
+  type Marker,
+  type StyleSpecification,
+} from 'maplibre-gl';
 
 import { lineFeatureCollection, pointFeatureCollection } from '../../lib/geojson';
 import type { BridgeState, GoalPayload, ResetVehiclePayload } from '../../types/bridge';
@@ -9,6 +14,7 @@ const DEFAULT_CENTER = {
   lat: Number(import.meta.env.VITE_DEFAULT_CENTER_LAT ?? 42.3008428),
   lon: Number(import.meta.env.VITE_DEFAULT_CENTER_LON ?? -83.6982926),
 };
+const FOLLOW_EGO_MIN_DELTA_DEG = 1e-6;
 
 function buildSatelliteStyle(): Record<string, unknown> {
   return {
@@ -33,6 +39,24 @@ function buildSatelliteStyle(): Record<string, unknown> {
   };
 }
 
+function syncOverlayLayerVisibility(
+  map: MapLibreMap,
+  overlayVisibility: OverlayVisibility,
+): void {
+  const layerVisibility: Array<[string, boolean]> = [
+    ['route-layer', overlayVisibility.route],
+    ['trajectory-layer', overlayVisibility.trajectory],
+    ['predicted-layer', overlayVisibility.predicted],
+    ['debug-layer', overlayVisibility.debug],
+  ];
+
+  for (const [layerId, visible] of layerVisibility) {
+    if (map.getLayer(layerId)) {
+      map.setLayoutProperty(layerId, 'visibility', visible ? 'visible' : 'none');
+    }
+  }
+}
+
 interface MapViewProps {
   bridgeState: BridgeState | null;
   connectionStatus: 'loading' | 'connected' | 'error';
@@ -48,16 +72,20 @@ export function MapView({
   onGoalPick,
   onResetVehicle,
 }: MapViewProps) {
+  const [followEgo, setFollowEgo] = useState(true);
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
-  const mapRef = useRef<maplibregl.Map | null>(null);
+  const mapRef = useRef<MapLibreMap | null>(null);
   const mapReadyRef = useRef(false);
-  const egoMarkerRef = useRef<maplibregl.Marker | null>(null);
+  const egoMarkerRef = useRef<Marker | null>(null);
   const initialCameraSetRef = useRef(false);
+  const lastFollowCenterRef = useRef<{ lat: number; lon: number } | null>(null);
   const latestBridgeStateRef = useRef<BridgeState | null>(bridgeState);
   const latestGoalHandlerRef = useRef(onGoalPick);
+  const latestOverlayVisibilityRef = useRef(overlayVisibility);
 
   latestBridgeStateRef.current = bridgeState;
   latestGoalHandlerRef.current = onGoalPick;
+  latestOverlayVisibilityRef.current = overlayVisibility;
 
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) {
@@ -66,7 +94,7 @@ export function MapView({
 
     const map = new maplibregl.Map({
       container: mapContainerRef.current,
-      style: buildSatelliteStyle() as maplibregl.StyleSpecification,
+      style: buildSatelliteStyle() as StyleSpecification,
       center: [DEFAULT_CENTER.lon, DEFAULT_CENTER.lat],
       zoom: 17.4,
       pitch: 48,
@@ -164,6 +192,8 @@ export function MapView({
           'circle-stroke-width': 2,
         },
       });
+
+      syncOverlayLayerVisibility(map, latestOverlayVisibilityRef.current);
     });
 
     map.on('click', (event) => {
@@ -184,6 +214,7 @@ export function MapView({
       mapRef.current = null;
       mapReadyRef.current = false;
       initialCameraSetRef.current = false;
+      lastFollowCenterRef.current = null;
     };
   }, []);
 
@@ -193,11 +224,11 @@ export function MapView({
       return;
     }
 
-    const routeSource = map.getSource('route-source') as maplibregl.GeoJSONSource | undefined;
-    const trajectorySource = map.getSource('trajectory-source') as maplibregl.GeoJSONSource | undefined;
-    const predictedSource = map.getSource('predicted-source') as maplibregl.GeoJSONSource | undefined;
-    const debugSource = map.getSource('debug-source') as maplibregl.GeoJSONSource | undefined;
-    const goalSource = map.getSource('goal-source') as maplibregl.GeoJSONSource | undefined;
+    const routeSource = map.getSource('route-source') as GeoJSONSource | undefined;
+    const trajectorySource = map.getSource('trajectory-source') as GeoJSONSource | undefined;
+    const predictedSource = map.getSource('predicted-source') as GeoJSONSource | undefined;
+    const debugSource = map.getSource('debug-source') as GeoJSONSource | undefined;
+    const goalSource = map.getSource('goal-source') as GeoJSONSource | undefined;
 
     routeSource?.setData(lineFeatureCollection(bridgeState.route.points));
     trajectorySource?.setData(lineFeatureCollection(bridgeState.reference_trajectory.points));
@@ -215,28 +246,36 @@ export function MapView({
         zoom: 18,
         pitch: 52,
       });
+      lastFollowCenterRef.current = {
+        lat: bridgeState.ego.latitude_deg,
+        lon: bridgeState.ego.longitude_deg,
+      };
       initialCameraSetRef.current = true;
+    } else if (followEgo) {
+      const lastFollowCenter = lastFollowCenterRef.current;
+      const latDelta = Math.abs((lastFollowCenter?.lat ?? 0) - bridgeState.ego.latitude_deg);
+      const lonDelta = Math.abs((lastFollowCenter?.lon ?? 0) - bridgeState.ego.longitude_deg);
+
+      if (latDelta > FOLLOW_EGO_MIN_DELTA_DEG || lonDelta > FOLLOW_EGO_MIN_DELTA_DEG) {
+        map.easeTo({
+          center: [bridgeState.ego.longitude_deg, bridgeState.ego.latitude_deg],
+          duration: 250,
+          essential: true,
+        });
+        lastFollowCenterRef.current = {
+          lat: bridgeState.ego.latitude_deg,
+          lon: bridgeState.ego.longitude_deg,
+        };
+      }
     }
-  }, [bridgeState]);
+  }, [bridgeState, followEgo]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReadyRef.current) {
       return;
     }
-
-    const layerVisibility: Array<[string, boolean]> = [
-      ['route-layer', overlayVisibility.route],
-      ['trajectory-layer', overlayVisibility.trajectory],
-      ['predicted-layer', overlayVisibility.predicted],
-      ['debug-layer', overlayVisibility.debug],
-    ];
-
-    for (const [layerId, visible] of layerVisibility) {
-      if (map.getLayer(layerId)) {
-        map.setLayoutProperty(layerId, 'visibility', visible ? 'visible' : 'none');
-      }
-    }
+    syncOverlayLayerVisibility(map, overlayVisibility);
   }, [overlayVisibility]);
 
   const centerOnEgo = () => {
@@ -248,6 +287,10 @@ export function MapView({
       zoom: Math.max(mapRef.current.getZoom(), 18),
       duration: 700,
     });
+    lastFollowCenterRef.current = {
+      lat: bridgeState.ego.latitude_deg,
+      lon: bridgeState.ego.longitude_deg,
+    };
   };
 
   const resetVehicleToMapCenter = () => {
@@ -280,6 +323,21 @@ export function MapView({
       </div>
       <div className="map-overlay map-overlay--top-right">
         <div className="button-stack">
+          <button
+            className={`action-button${followEgo ? ' action-button--active' : ''}`}
+            type="button"
+            onClick={() => {
+              setFollowEgo((current) => {
+                const next = !current;
+                if (next) {
+                  centerOnEgo();
+                }
+                return next;
+              });
+            }}
+          >
+            {followEgo ? 'Pause Follow' : 'Follow Ego'}
+          </button>
           <button className="action-button" type="button" onClick={centerOnEgo}>
             Center Ego
           </button>

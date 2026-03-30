@@ -252,6 +252,37 @@ select {
   background: rgba(255, 157, 145, 0.9);
 }
 
+.field-grid {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.38rem;
+}
+
+.field span {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.field input {
+  padding: 0.72rem 0.78rem;
+  border-radius: 0.8rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-main);
+}
+
+.field input:focus {
+  outline: 2px solid rgba(34, 215, 196, 0.32);
+  outline-offset: 1px;
+}
+
 .toggle-group {
   display: inline-flex;
   border-radius: 999px;
@@ -352,6 +383,16 @@ select {
   color: var(--text-main);
   cursor: pointer;
   backdrop-filter: blur(10px);
+}
+
+.action-button--active {
+  border-color: rgba(34, 215, 196, 0.45);
+  background: rgba(34, 215, 196, 0.2);
+}
+
+.action-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .action-button--ghost {
