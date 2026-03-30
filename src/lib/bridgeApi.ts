@@ -16,11 +16,11 @@ async function request<T>(
   init?: RequestInit,
 ): Promise<T> {
   const response = await fetch(`${bridgeBaseUrl}${path}`, {
+    ...init,
     headers: {
       'Content-Type': 'application/json',
       ...(init?.headers ?? {}),
     },
-    ...init,
   });
 
   if (!response.ok) {
@@ -78,4 +78,3 @@ export async function resetVehicle(
     body: JSON.stringify(payload),
   });
 }
-

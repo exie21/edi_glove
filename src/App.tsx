@@ -1,3 +1,5 @@
+import { useState } from 'react';
+
 import { useBridgeState } from './hooks/useBridgeState';
 import { useKeyboardDrive } from './hooks/useKeyboardDrive';
 import { MapView } from './components/map/MapView';
@@ -6,8 +8,10 @@ import { GoalPanel } from './components/panels/GoalPanel';
 import { ManualDrivePanel } from './components/panels/ManualDrivePanel';
 import { OverlayPanel } from './components/panels/OverlayPanel';
 import { TelemetryPanel } from './components/panels/TelemetryPanel';
+import { DEFAULT_OVERLAY_VISIBILITY } from './types/ui';
 
 export default function App() {
+  const [overlayVisibility, setOverlayVisibility] = useState(DEFAULT_OVERLAY_VISIBILITY);
   const {
     bridgeState,
     connectionStatus,
@@ -33,6 +37,7 @@ export default function App() {
         <MapView
           bridgeState={bridgeState}
           connectionStatus={connectionStatus}
+          overlayVisibility={overlayVisibility}
           onGoalPick={setGoal}
           onResetVehicle={resetVehicle}
         />
@@ -60,9 +65,17 @@ export default function App() {
         />
         <TelemetryPanel bridgeState={bridgeState} />
         <GoalPanel bridgeState={bridgeState} />
-        <OverlayPanel bridgeState={bridgeState} />
+        <OverlayPanel
+          bridgeState={bridgeState}
+          overlayVisibility={overlayVisibility}
+          onToggleOverlay={(overlayKey) => {
+            setOverlayVisibility((current) => ({
+              ...current,
+              [overlayKey]: !current[overlayKey],
+            }));
+          }}
+        />
       </aside>
     </main>
   );
 }
-

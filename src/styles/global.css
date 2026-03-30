@@ -386,6 +386,25 @@ select {
   color: var(--text-muted);
 }
 
+.overlay-toggle {
+  padding: 0.38rem 0.62rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    border-color 120ms ease,
+    background 120ms ease,
+    color 120ms ease;
+}
+
+.overlay-toggle--active {
+  border-color: rgba(255, 178, 77, 0.4);
+  background: rgba(255, 178, 77, 0.16);
+  color: var(--text-main);
+}
+
 .swatch {
   width: 0.9rem;
   height: 0.9rem;
@@ -481,5 +500,14 @@ select {
 
   .button-stack {
     align-items: stretch;
+  }
+
+  .overlay-row {
+    align-items: flex-start;
+  }
+
+  .overlay-row__meta {
+    flex-wrap: wrap;
+    justify-content: flex-end;
   }
 }

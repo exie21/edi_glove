@@ -3,6 +3,7 @@ import maplibregl from 'maplibre-gl';
 
 import { lineFeatureCollection, pointFeatureCollection } from '../../lib/geojson';
 import type { BridgeState, GoalPayload, ResetVehiclePayload } from '../../types/bridge';
+import type { OverlayVisibility } from '../../types/ui';
 
 const DEFAULT_CENTER = {
   lat: Number(import.meta.env.VITE_DEFAULT_CENTER_LAT ?? 42.3008428),
@@ -35,6 +36,7 @@ function buildSatelliteStyle(): Record<string, unknown> {
 interface MapViewProps {
   bridgeState: BridgeState | null;
   connectionStatus: 'loading' | 'connected' | 'error';
+  overlayVisibility: OverlayVisibility;
   onGoalPick: (goal: GoalPayload) => Promise<void>;
   onResetVehicle: (payload: ResetVehiclePayload) => Promise<void>;
 }
@@ -42,6 +44,7 @@ interface MapViewProps {
 export function MapView({
   bridgeState,
   connectionStatus,
+  overlayVisibility,
   onGoalPick,
   onResetVehicle,
 }: MapViewProps) {
@@ -50,6 +53,11 @@ export function MapView({
   const mapReadyRef = useRef(false);
   const egoMarkerRef = useRef<maplibregl.Marker | null>(null);
   const initialCameraSetRef = useRef(false);
+  const latestBridgeStateRef = useRef<BridgeState | null>(bridgeState);
+  const latestGoalHandlerRef = useRef(onGoalPick);
+
+  latestBridgeStateRef.current = bridgeState;
+  latestGoalHandlerRef.current = onGoalPick;
 
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) {
@@ -159,8 +167,8 @@ export function MapView({
     });
 
     map.on('click', (event) => {
-      const heading = bridgeState?.ego.heading_deg ?? 0;
-      void onGoalPick({
+      const heading = latestBridgeStateRef.current?.ego.heading_deg ?? 0;
+      void latestGoalHandlerRef.current({
         goal_lat: event.lngLat.lat,
         goal_lon: event.lngLat.lng,
         goal_heading: heading,
@@ -177,7 +185,7 @@ export function MapView({
       mapReadyRef.current = false;
       initialCameraSetRef.current = false;
     };
-  }, [bridgeState?.ego.heading_deg, onGoalPick]);
+  }, []);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -210,6 +218,26 @@ export function MapView({
       initialCameraSetRef.current = true;
     }
   }, [bridgeState]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReadyRef.current) {
+      return;
+    }
+
+    const layerVisibility: Array<[string, boolean]> = [
+      ['route-layer', overlayVisibility.route],
+      ['trajectory-layer', overlayVisibility.trajectory],
+      ['predicted-layer', overlayVisibility.predicted],
+      ['debug-layer', overlayVisibility.debug],
+    ];
+
+    for (const [layerId, visible] of layerVisibility) {
+      if (map.getLayer(layerId)) {
+        map.setLayoutProperty(layerId, 'visibility', visible ? 'visible' : 'none');
+      }
+    }
+  }, [overlayVisibility]);
 
   const centerOnEgo = () => {
     if (!mapRef.current || !bridgeState) {
@@ -267,4 +295,3 @@ export function MapView({
     </section>
   );
 }
-
