@@ -9,6 +9,10 @@ import maplibregl, {
 
 import { lineFeatureCollection, pointFeatureCollection } from '../../lib/geojson';
 import {
+  EDITOR_TOOL_META,
+  editorObjectFeatureCollection,
+} from '../../lib/editorObjects';
+import {
   MAP_PRESETS,
   type MapPresetKey,
 } from '../../lib/mapPresets';
@@ -20,8 +24,10 @@ import type {
   ResetVehiclePayload,
 } from '../../types/bridge';
 import type {
-  MapClickMode,
+  EditorTool,
+  MapInteractionMode,
   OverlayVisibility,
+  SceneObject,
   Waypoint,
 } from '../../types/ui';
 
@@ -80,10 +86,17 @@ interface MapViewProps {
   bridgeReady: boolean;
   mapPresetKey: MapPresetKey;
   onMapPresetChange: (preset: MapPresetKey) => void;
-  clickMode: MapClickMode;
-  onClickModeChange: (mode: MapClickMode) => void;
+  interactionMode: MapInteractionMode;
+  onInteractionModeChange: (mode: MapInteractionMode) => void;
+  editorTool: EditorTool;
   waypoints: Waypoint[];
+  sceneObjects: SceneObject[];
   onAddWaypoint: (latitude_deg: number, longitude_deg: number) => void;
+  onAddSceneObject: (
+    kind: SceneObject['kind'],
+    latitude_deg: number,
+    longitude_deg: number,
+  ) => void;
   overlayVisibility: OverlayVisibility;
   onGoalPick: (goal: GoalPayload) => Promise<void>;
   onResetVehicle: (payload: ResetVehiclePayload) => Promise<void>;
@@ -95,10 +108,13 @@ export function MapView({
   bridgeReady,
   mapPresetKey,
   onMapPresetChange,
-  clickMode,
-  onClickModeChange,
+  interactionMode,
+  onInteractionModeChange,
+  editorTool,
   waypoints,
+  sceneObjects,
   onAddWaypoint,
+  onAddSceneObject,
   overlayVisibility,
   onGoalPick,
   onResetVehicle,
@@ -114,14 +130,18 @@ export function MapView({
   const lastFollowCenterRef = useRef<{ lat: number; lon: number } | null>(null);
   const latestBridgeStateRef = useRef<BridgeState | null>(bridgeState);
   const latestBridgeReadyRef = useRef(bridgeReady);
-  const latestClickModeRef = useRef<MapClickMode>(clickMode);
+  const latestInteractionModeRef = useRef<MapInteractionMode>(interactionMode);
+  const latestEditorToolRef = useRef<EditorTool>(editorTool);
   const latestGoalHandlerRef = useRef(onGoalPick);
   const latestAddWaypointRef = useRef(onAddWaypoint);
+  const latestAddSceneObjectRef = useRef(onAddSceneObject);
   const latestOverlayVisibilityRef = useRef(overlayVisibility);
   const latestWaypointsRef = useRef(waypoints);
+  const latestSceneObjectsRef = useRef(sceneObjects);
   const activePreset = MAP_PRESETS[mapPresetKey];
   const hasLiveBridgeState = bridgeReady && Boolean(bridgeState);
   const followButtonActive = followEgo && hasLiveBridgeState;
+  const createModeEnabled = interactionMode === 'editor';
 
   const activateWaypointGoal = (waypoint: Waypoint) => {
     const waypointLabel = waypoint.label ?? 'Waypoint';
@@ -152,11 +172,14 @@ export function MapView({
 
   latestBridgeStateRef.current = bridgeState;
   latestBridgeReadyRef.current = bridgeReady;
-  latestClickModeRef.current = clickMode;
+  latestInteractionModeRef.current = interactionMode;
+  latestEditorToolRef.current = editorTool;
   latestGoalHandlerRef.current = onGoalPick;
   latestAddWaypointRef.current = onAddWaypoint;
+  latestAddSceneObjectRef.current = onAddSceneObject;
   latestOverlayVisibilityRef.current = overlayVisibility;
   latestWaypointsRef.current = waypoints;
+  latestSceneObjectsRef.current = sceneObjects;
 
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) {
@@ -231,15 +254,24 @@ export function MapView({
         type: 'geojson',
         data: waypointFeatureCollection([]),
       });
+      map.addSource('editor-objects-source', {
+        type: 'geojson',
+        data: editorObjectFeatureCollection([]),
+      });
 
       map.addLayer({
         id: 'route-layer',
         type: 'line',
         source: 'route-source',
+        layout: {
+          'line-cap': 'round',
+          'line-join': 'round',
+        },
         paint: {
           'line-color': '#ffb24d',
-          'line-width': 5,
-          'line-opacity': 0.9,
+          'line-width': 4.8,
+          'line-opacity': 0.92,
+          'line-dasharray': [0.25, 1.35],
         },
       });
       map.addLayer({
@@ -364,6 +396,45 @@ export function MapView({
         },
       });
       map.addLayer({
+        id: 'editor-object-layer',
+        type: 'circle',
+        source: 'editor-objects-source',
+        paint: {
+          'circle-radius': [
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            15,
+            3.4,
+            18.5,
+            5.8,
+            20.5,
+            7.6,
+          ],
+          'circle-color': [
+            'match',
+            ['get', 'kind'],
+            'traffic_light',
+            '#bbf06e',
+            'barrel',
+            '#ffb24d',
+            '#d7dce2',
+          ],
+          'circle-stroke-color': '#071018',
+          'circle-stroke-width': [
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            15,
+            0.9,
+            20.5,
+            1.35,
+          ],
+          'circle-pitch-alignment': 'map',
+          'circle-pitch-scale': 'map',
+        },
+      });
+      map.addLayer({
         id: 'waypoint-label-layer',
         type: 'symbol',
         source: 'waypoints-source',
@@ -391,6 +462,34 @@ export function MapView({
           'text-halo-width': 0.55,
         },
       });
+      map.addLayer({
+        id: 'editor-object-label-layer',
+        type: 'symbol',
+        source: 'editor-objects-source',
+        layout: {
+          'text-field': ['get', 'label'],
+          'text-size': [
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            15,
+            7.3,
+            18.5,
+            8.6,
+            20.5,
+            9.6,
+          ],
+          'text-font': ['Open Sans Bold'],
+          'text-anchor': 'center',
+          'text-allow-overlap': true,
+          'text-ignore-placement': true,
+        },
+        paint: {
+          'text-color': '#071018',
+          'text-halo-color': 'rgba(255, 255, 255, 0.16)',
+          'text-halo-width': 0.45,
+        },
+      });
 
       syncOverlayLayerVisibility(map, latestOverlayVisibilityRef.current);
       map.on('mouseenter', 'waypoint-layer', setWaypointCursor);
@@ -410,6 +509,9 @@ export function MapView({
       const clickedWaypointFeature = map.queryRenderedFeatures(event.point, {
         layers: ['waypoint-layer', 'waypoint-label-layer'],
       })[0];
+      const clickedEditorFeature = map.queryRenderedFeatures(event.point, {
+        layers: ['editor-object-layer', 'editor-object-label-layer'],
+      })[0];
 
       if (clickedWaypointFeature) {
         const waypointId =
@@ -426,9 +528,37 @@ export function MapView({
         }
       }
 
-      if (latestClickModeRef.current === 'waypoint') {
-        latestAddWaypointRef.current(event.lngLat.lat, event.lngLat.lng);
-        setMapStatusMessage('Waypoint added to the map.');
+      if (clickedEditorFeature) {
+        const objectId =
+          typeof clickedEditorFeature.properties?.id === 'string'
+            ? clickedEditorFeature.properties.id
+            : null;
+        const object = objectId
+          ? latestSceneObjectsRef.current.find((candidate) => candidate.id === objectId)
+          : undefined;
+        if (object) {
+          setMapStatusMessage(`${object.label} is a local scene object.`);
+          return;
+        }
+      }
+
+      if (latestInteractionModeRef.current === 'editor') {
+        const activeEditorTool = latestEditorToolRef.current;
+
+        if (activeEditorTool === 'waypoint') {
+          latestAddWaypointRef.current(event.lngLat.lat, event.lngLat.lng);
+          setMapStatusMessage('Waypoint added to the editor.');
+          return;
+        }
+
+        latestAddSceneObjectRef.current(
+          activeEditorTool,
+          event.lngLat.lat,
+          event.lngLat.lng,
+        );
+        setMapStatusMessage(
+          `${EDITOR_TOOL_META[activeEditorTool].label} added to the editor.`,
+        );
         return;
       }
 
@@ -514,6 +644,7 @@ export function MapView({
     const debugSource = map.getSource('debug-source') as GeoJSONSource | undefined;
     const goalSource = map.getSource('goal-source') as GeoJSONSource | undefined;
     const waypointSource = map.getSource('waypoints-source') as GeoJSONSource | undefined;
+    const editorObjectSource = map.getSource('editor-objects-source') as GeoJSONSource | undefined;
 
     routeSource?.setData(lineFeatureCollection(bridgeState.route.points));
     trajectorySource?.setData(lineFeatureCollection(bridgeState.reference_trajectory.points));
@@ -521,6 +652,7 @@ export function MapView({
     debugSource?.setData(lineFeatureCollection(bridgeState.debug_reference_path.points));
     goalSource?.setData(pointFeatureCollection(bridgeState.goal_status.goal ?? previewGoal));
     waypointSource?.setData(waypointFeatureCollection(waypoints));
+    editorObjectSource?.setData(editorObjectFeatureCollection(sceneObjects));
 
     egoMarkerRef.current
       ?.setLngLat([bridgeState.ego.longitude_deg, bridgeState.ego.latitude_deg])
@@ -554,18 +686,20 @@ export function MapView({
         };
       }
     }
-  }, [bridgeState, followEgo, previewGoal, waypoints]);
+  }, [bridgeState, followEgo, previewGoal, sceneObjects, waypoints]);
 
   useEffect(() => {
     const map = mapRef.current;
     const goalSource = map?.getSource('goal-source') as GeoJSONSource | undefined;
     const waypointSource = map?.getSource('waypoints-source') as GeoJSONSource | undefined;
+    const editorObjectSource = map?.getSource('editor-objects-source') as GeoJSONSource | undefined;
     if (!goalSource) {
       return;
     }
     goalSource.setData(pointFeatureCollection(bridgeState?.goal_status.goal ?? previewGoal));
     waypointSource?.setData(waypointFeatureCollection(waypoints));
-  }, [bridgeState?.goal_status.goal, previewGoal, waypoints]);
+    editorObjectSource?.setData(editorObjectFeatureCollection(sceneObjects));
+  }, [bridgeState?.goal_status.goal, previewGoal, sceneObjects, waypoints]);
 
   useEffect(() => {
     const markerElement = egoMarkerRef.current?.getElement();
@@ -629,21 +763,21 @@ export function MapView({
 
   const mapHint = bridgeReady
     ? `Bridge connected on ${activePreset.label}. ${
-        clickMode === 'waypoint'
-          ? 'Click blank map space to save a labeled waypoint. Click any saved waypoint later to route there from the current ego pose.'
+        createModeEnabled
+          ? `Create Mode is active. Blank-map clicks place ${EDITOR_TOOL_META[editorTool].label.toLowerCase()} objects.`
           : 'Click anywhere to send a goal through the bridge.'
       }`
     : bridgeState
-      ? clickMode === 'waypoint'
-        ? 'Bridge disconnected. Last known ego telemetry is still on screen, and waypoint clicks only update the local draft or preview.'
+      ? createModeEnabled
+        ? 'Bridge disconnected. Existing telemetry stays visible, and Create Mode only updates local editor objects.'
         : 'Bridge disconnected. Last known telemetry is still on screen, and map clicks only preview a goal locally.'
-    : clickMode === 'waypoint'
-      ? 'Bridge offline. Click anywhere to drop labeled waypoints on the map.'
+    : createModeEnabled
+      ? 'Bridge offline. Create Mode still places local editor objects on the map.'
       : 'Bridge offline. Click anywhere to preview a goal while the rest of the UI stays browseable.';
 
   const mapCommandNote = mapStatusMessage ?? (
-    clickMode === 'waypoint'
-      ? 'Waypoint mode is active. Blank-map clicks save reusable labels like A, B, and C. Clicking an existing waypoint pin sends that saved point as the next goal.'
+    createModeEnabled
+      ? `${EDITOR_TOOL_META[editorTool].label} placement is active. Existing waypoint pins still route there if you click them.`
       : bridgeReady
       ? 'Live controls are enabled. Use Recenter to jump back to ego and Reset To Map Center to teleport the fake vehicle.'
       : 'Recenter still works in offline mode. Follow Ego and vehicle reset will enable once live ego state is available.'
@@ -681,22 +815,22 @@ export function MapView({
         </div>
         <div className="map-mode-switcher">
           <button
-            className={`map-mode-switcher__button${clickMode === 'goal' ? ' map-mode-switcher__button--active' : ''}`}
+            className={`map-mode-switcher__button${interactionMode === 'goal' ? ' map-mode-switcher__button--active' : ''}`}
             type="button"
             onClick={() => {
-              onClickModeChange('goal');
+              onInteractionModeChange('goal');
             }}
           >
             Goal Mode
           </button>
           <button
-            className={`map-mode-switcher__button${clickMode === 'waypoint' ? ' map-mode-switcher__button--active' : ''}`}
+            className={`map-mode-switcher__button${createModeEnabled ? ' map-mode-switcher__button--active' : ''}`}
             type="button"
             onClick={() => {
-              onClickModeChange('waypoint');
+              onInteractionModeChange('editor');
             }}
           >
-            Waypoint Mode
+            Create Mode
           </button>
         </div>
         <p className="map-hint">

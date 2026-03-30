@@ -526,6 +526,54 @@ select {
   gap: 0.55rem;
 }
 
+.editor-tool-grid {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.editor-tool-button {
+  display: flex;
+  flex-direction: column;
+  gap: 0.28rem;
+  width: 100%;
+  padding: 0.78rem 0.82rem;
+  text-align: left;
+  color: var(--text-main);
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0.82rem;
+  cursor: pointer;
+}
+
+.editor-tool-button strong {
+  font-size: 0.94rem;
+}
+
+.editor-tool-button span {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.editor-tool-button--active {
+  border-color: rgba(255, 178, 77, 0.4);
+  background: rgba(255, 178, 77, 0.14);
+}
+
+.editor-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.editor-section__title {
+  margin: 0;
+  font-size: 0.8rem;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
 .waypoint-row {
   display: flex;
   align-items: center;
@@ -559,6 +607,24 @@ select {
   background: rgba(18, 28, 39, 0.96);
   border: 2px solid #fff5c0;
   font-weight: 700;
+}
+
+.waypoint-badge--traffic_light {
+  width: auto;
+  min-width: 2.45rem;
+  padding: 0 0.55rem;
+  color: #071018;
+  background: #bbf06e;
+  border-color: #071018;
+}
+
+.waypoint-badge--barrel {
+  width: auto;
+  min-width: 2.45rem;
+  padding: 0 0.55rem;
+  color: #071018;
+  background: #ffb24d;
+  border-color: #071018;
 }
 
 .overlay-row {

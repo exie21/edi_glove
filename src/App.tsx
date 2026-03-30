@@ -4,24 +4,31 @@ import { useBridgeState } from './hooks/useBridgeState';
 import { useKeyboardDrive } from './hooks/useKeyboardDrive';
 import { MapView } from './components/map/MapView';
 import { BridgeStatusPanel } from './components/panels/BridgeStatusPanel';
+import { EditorPanel } from './components/panels/EditorPanel';
 import { GoalPanel } from './components/panels/GoalPanel';
 import { ManualDrivePanel } from './components/panels/ManualDrivePanel';
 import { OverlayPanel } from './components/panels/OverlayPanel';
 import { TelemetryPanel } from './components/panels/TelemetryPanel';
-import { WaypointPanel } from './components/panels/WaypointPanel';
+import {
+  getNextSceneObjectLabel,
+} from './lib/editorObjects';
 import { getDefaultMapPreset } from './lib/mapPresets';
 import { getWaypointLabel } from './lib/waypoints';
 import {
   DEFAULT_OVERLAY_VISIBILITY,
-  type MapClickMode,
+  type EditorTool,
+  type MapInteractionMode,
+  type SceneObject,
   type Waypoint,
 } from './types/ui';
 
 export default function App() {
   const [overlayVisibility, setOverlayVisibility] = useState(DEFAULT_OVERLAY_VISIBILITY);
   const [mapPresetKey, setMapPresetKey] = useState(getDefaultMapPreset().key);
-  const [clickMode, setClickMode] = useState<MapClickMode>('goal');
+  const [interactionMode, setInteractionMode] = useState<MapInteractionMode>('goal');
+  const [editorTool, setEditorTool] = useState<EditorTool>('waypoint');
   const [waypoints, setWaypoints] = useState<Waypoint[]>([]);
+  const [sceneObjects, setSceneObjects] = useState<SceneObject[]>([]);
   const {
     bridgeState,
     connectionStatus,
@@ -76,6 +83,23 @@ export default function App() {
     });
   };
 
+  const addSceneObject = (
+    kind: SceneObject['kind'],
+    latitude_deg: number,
+    longitude_deg: number,
+  ) => {
+    setSceneObjects((current) => [
+      ...current,
+      {
+        id: `${kind}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
+        kind,
+        label: getNextSceneObjectLabel(kind, current),
+        latitude_deg,
+        longitude_deg,
+      },
+    ]);
+  };
+
   return (
     <main className="app-shell">
       <section className="app-shell__map">
@@ -85,10 +109,13 @@ export default function App() {
           bridgeReady={bridgeReady}
           mapPresetKey={mapPresetKey}
           onMapPresetChange={setMapPresetKey}
-          clickMode={clickMode}
-          onClickModeChange={setClickMode}
+          interactionMode={interactionMode}
+          onInteractionModeChange={setInteractionMode}
+          editorTool={editorTool}
           waypoints={waypoints}
+          sceneObjects={sceneObjects}
           onAddWaypoint={addWaypoint}
+          onAddSceneObject={addSceneObject}
           overlayVisibility={overlayVisibility}
           onGoalPick={setGoal}
           onResetVehicle={resetVehicle}
@@ -123,12 +150,14 @@ export default function App() {
             bridgeReady={bridgeReady}
             onGoalSubmit={setGoal}
           />
-          <WaypointPanel
+          <EditorPanel
             bridgeReady={bridgeReady}
-            clickMode={clickMode}
-            waypointCount={waypoints.length}
+            interactionMode={interactionMode}
+            editorTool={editorTool}
             waypoints={waypoints}
-            onClickModeChange={setClickMode}
+            sceneObjects={sceneObjects}
+            onInteractionModeChange={setInteractionMode}
+            onEditorToolChange={setEditorTool}
             onClearWaypoints={() => {
               setWaypoints([]);
             }}
@@ -141,6 +170,12 @@ export default function App() {
                 goal_lon: waypoint.longitude_deg,
                 goal_heading: bridgeState?.ego.heading_deg ?? 0,
               });
+            }}
+            onClearSceneObjects={() => {
+              setSceneObjects([]);
+            }}
+            onRemoveSceneObject={(id) => {
+              setSceneObjects((current) => current.filter((object) => object.id !== id));
             }}
           />
           <OverlayPanel
