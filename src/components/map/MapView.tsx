@@ -7,8 +7,10 @@ import maplibregl, {
   type StyleSpecification,
 } from 'maplibre-gl';
 
+import { BridgeStatusPanel } from '../panels/BridgeStatusPanel';
 import { lineFeatureCollection, pointFeatureCollection } from '../../lib/geojson';
 import {
+  CREATE_HOTBAR_TOOLS,
   EDITOR_TOOL_META,
   editorObjectFeatureCollection,
 } from '../../lib/editorObjects';
@@ -33,6 +35,7 @@ import type {
 
 const FOLLOW_EGO_MIN_DELTA_DEG = 1e-6;
 const MAX_SOURCE_ZOOM = 19;
+const MAP_STATUS_TIMEOUT_MS = 3000;
 
 function buildSatelliteStyle(): Record<string, unknown> {
   return {
@@ -84,11 +87,14 @@ interface MapViewProps {
   bridgeState: BridgeState | null;
   connectionStatus: 'loading' | 'connected' | 'error';
   bridgeReady: boolean;
+  errorMessage: string | null;
+  lastCommandMessage: string | null;
   mapPresetKey: MapPresetKey;
   onMapPresetChange: (preset: MapPresetKey) => void;
   interactionMode: MapInteractionMode;
   onInteractionModeChange: (mode: MapInteractionMode) => void;
   editorTool: EditorTool;
+  onEditorToolChange: (tool: EditorTool) => void;
   waypoints: Waypoint[];
   sceneObjects: SceneObject[];
   onAddWaypoint: (latitude_deg: number, longitude_deg: number) => void;
@@ -97,6 +103,8 @@ interface MapViewProps {
     latitude_deg: number,
     longitude_deg: number,
   ) => void;
+  onRemoveWaypoint: (id: string) => void;
+  onRemoveSceneObject: (id: string) => void;
   overlayVisibility: OverlayVisibility;
   onGoalPick: (goal: GoalPayload) => Promise<void>;
   onResetVehicle: (payload: ResetVehiclePayload) => Promise<void>;
@@ -106,15 +114,20 @@ export function MapView({
   bridgeState,
   connectionStatus,
   bridgeReady,
+  errorMessage,
+  lastCommandMessage,
   mapPresetKey,
   onMapPresetChange,
   interactionMode,
   onInteractionModeChange,
   editorTool,
+  onEditorToolChange,
   waypoints,
   sceneObjects,
   onAddWaypoint,
   onAddSceneObject,
+  onRemoveWaypoint,
+  onRemoveSceneObject,
   overlayVisibility,
   onGoalPick,
   onResetVehicle,
@@ -122,6 +135,7 @@ export function MapView({
   const [followEgo, setFollowEgo] = useState(true);
   const [previewGoal, setPreviewGoal] = useState<BridgeGoal | null>(null);
   const [mapStatusMessage, setMapStatusMessage] = useState<string | null>(null);
+  const [trayOpen, setTrayOpen] = useState(true);
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const mapReadyRef = useRef(false);
@@ -135,6 +149,8 @@ export function MapView({
   const latestGoalHandlerRef = useRef(onGoalPick);
   const latestAddWaypointRef = useRef(onAddWaypoint);
   const latestAddSceneObjectRef = useRef(onAddSceneObject);
+  const latestRemoveWaypointRef = useRef(onRemoveWaypoint);
+  const latestRemoveSceneObjectRef = useRef(onRemoveSceneObject);
   const latestOverlayVisibilityRef = useRef(overlayVisibility);
   const latestWaypointsRef = useRef(waypoints);
   const latestSceneObjectsRef = useRef(sceneObjects);
@@ -143,8 +159,10 @@ export function MapView({
   const followButtonActive = followEgo && hasLiveBridgeState;
   const createModeEnabled = interactionMode === 'editor';
 
+  const waypointLabel = (waypoint: Waypoint) => waypoint.label ?? 'Waypoint';
+
   const activateWaypointGoal = (waypoint: Waypoint) => {
-    const waypointLabel = waypoint.label ?? 'Waypoint';
+    const label = waypointLabel(waypoint);
     const goal: BridgeGoal = {
       goal_lat: waypoint.latitude_deg,
       goal_lon: waypoint.longitude_deg,
@@ -154,18 +172,18 @@ export function MapView({
     setPreviewGoal(goal);
 
     if (!latestBridgeReadyRef.current) {
-      setMapStatusMessage(`${waypointLabel} selected as a local goal preview.`);
+      setMapStatusMessage(`${label} selected as a local goal preview.`);
       return;
     }
 
-    setMapStatusMessage(`Routing to ${waypointLabel}...`);
+    setMapStatusMessage(`Routing to ${label}...`);
     void latestGoalHandlerRef.current(goal)
       .then(() => {
-        setMapStatusMessage(`${waypointLabel} sent as the active goal.`);
+        setMapStatusMessage(`${label} sent as the active goal.`);
       })
       .catch((error) => {
         setMapStatusMessage(
-          error instanceof Error ? error.message : `Routing to ${waypointLabel} failed.`,
+          error instanceof Error ? error.message : `Routing to ${label} failed.`,
         );
       });
   };
@@ -177,9 +195,25 @@ export function MapView({
   latestGoalHandlerRef.current = onGoalPick;
   latestAddWaypointRef.current = onAddWaypoint;
   latestAddSceneObjectRef.current = onAddSceneObject;
+  latestRemoveWaypointRef.current = onRemoveWaypoint;
+  latestRemoveSceneObjectRef.current = onRemoveSceneObject;
   latestOverlayVisibilityRef.current = overlayVisibility;
   latestWaypointsRef.current = waypoints;
   latestSceneObjectsRef.current = sceneObjects;
+
+  useEffect(() => {
+    if (!mapStatusMessage) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setMapStatusMessage((current) => (current === mapStatusMessage ? null : current));
+    }, MAP_STATUS_TIMEOUT_MS);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [mapStatusMessage]);
 
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) {
@@ -496,6 +530,10 @@ export function MapView({
       map.on('mouseleave', 'waypoint-layer', clearWaypointCursor);
       map.on('mouseenter', 'waypoint-label-layer', setWaypointCursor);
       map.on('mouseleave', 'waypoint-label-layer', clearWaypointCursor);
+      map.on('mouseenter', 'editor-object-layer', setWaypointCursor);
+      map.on('mouseleave', 'editor-object-layer', clearWaypointCursor);
+      map.on('mouseenter', 'editor-object-label-layer', setWaypointCursor);
+      map.on('mouseleave', 'editor-object-label-layer', clearWaypointCursor);
     });
 
     const setWaypointCursor = () => {
@@ -523,6 +561,14 @@ export function MapView({
           : undefined;
 
         if (waypoint) {
+          if (
+            latestInteractionModeRef.current === 'editor'
+            && latestEditorToolRef.current === 'delete'
+          ) {
+            latestRemoveWaypointRef.current(waypoint.id);
+            setMapStatusMessage(`${waypointLabel(waypoint)} removed from the map.`);
+            return;
+          }
           activateWaypointGoal(waypoint);
           return;
         }
@@ -537,6 +583,14 @@ export function MapView({
           ? latestSceneObjectsRef.current.find((candidate) => candidate.id === objectId)
           : undefined;
         if (object) {
+          if (
+            latestInteractionModeRef.current === 'editor'
+            && latestEditorToolRef.current === 'delete'
+          ) {
+            latestRemoveSceneObjectRef.current(object.id);
+            setMapStatusMessage(`${object.label} removed from the scene.`);
+            return;
+          }
           setMapStatusMessage(`${object.label} is a local scene object.`);
           return;
         }
@@ -544,6 +598,11 @@ export function MapView({
 
       if (latestInteractionModeRef.current === 'editor') {
         const activeEditorTool = latestEditorToolRef.current;
+
+        if (activeEditorTool === 'delete') {
+          setMapStatusMessage('Delete mode is armed. Click a waypoint or scene prop to remove it.');
+          return;
+        }
 
         if (activeEditorTool === 'waypoint') {
           latestAddWaypointRef.current(event.lngLat.lat, event.lngLat.lng);
@@ -596,6 +655,10 @@ export function MapView({
       map.off('mouseleave', 'waypoint-layer', clearWaypointCursor);
       map.off('mouseenter', 'waypoint-label-layer', setWaypointCursor);
       map.off('mouseleave', 'waypoint-label-layer', clearWaypointCursor);
+      map.off('mouseenter', 'editor-object-layer', setWaypointCursor);
+      map.off('mouseleave', 'editor-object-layer', clearWaypointCursor);
+      map.off('mouseenter', 'editor-object-label-layer', setWaypointCursor);
+      map.off('mouseleave', 'editor-object-label-layer', clearWaypointCursor);
       egoMarkerRef.current?.remove();
       egoMarkerRef.current = null;
       map.remove();
@@ -764,7 +827,9 @@ export function MapView({
   const mapHint = bridgeReady
     ? `Bridge connected on ${activePreset.label}. ${
         createModeEnabled
-          ? `Create Mode is active. Blank-map clicks place ${EDITOR_TOOL_META[editorTool].label.toLowerCase()} objects.`
+          ? editorTool === 'delete'
+            ? 'Create Mode is active. Delete mode is armed for placed props and saved waypoints.'
+            : `Create Mode is active. Use the hotbar to place ${EDITOR_TOOL_META[editorTool].label.toLowerCase()} objects.`
           : 'Click anywhere to send a goal through the bridge.'
       }`
     : bridgeState
@@ -777,68 +842,98 @@ export function MapView({
 
   const mapCommandNote = mapStatusMessage ?? (
     createModeEnabled
-      ? `${EDITOR_TOOL_META[editorTool].label} placement is active. Existing waypoint pins still route there if you click them.`
+      ? editorTool === 'delete'
+        ? 'Delete mode is armed. Click any saved waypoint or scene prop on the map to remove it.'
+        : `${EDITOR_TOOL_META[editorTool].label} placement is active. Existing waypoint pins still route there unless Delete is armed.`
       : bridgeReady
       ? 'Live controls are enabled. Use Recenter to jump back to ego and Reset To Map Center to teleport the fake vehicle.'
       : 'Recenter still works in offline mode. Follow Ego and vehicle reset will enable once live ego state is available.'
   );
+  const showMapCommandNote = Boolean(mapStatusMessage) || !createModeEnabled;
+
   return (
     <section className="map-shell">
       <div ref={mapContainerRef} className="map-canvas" />
       <div className="map-overlay map-overlay--top-left">
-        <div className="map-brand">
-          <span className="map-brand__kicker">Standalone Sandbox</span>
-          <strong className="map-brand__title">Ediglove</strong>
-          <span className={`status-pill status-pill--${connectionStatus}`}>
-            {connectionStatus}
-          </span>
+        <div className={`map-control-tray${trayOpen ? '' : ' map-control-tray--collapsed'}`}>
+          <div className="map-control-tray__header">
+            <div className="map-brand">
+              <span className="map-brand__kicker">Standalone Sandbox</span>
+              <strong className="map-brand__title">Ediglove</strong>
+              <span className={`status-pill status-pill--${connectionStatus}`}>
+                {connectionStatus}
+              </span>
+            </div>
+            <button
+              className="map-tray-toggle"
+              type="button"
+              aria-label={trayOpen ? 'Hide map controls' : 'Show map controls'}
+              onClick={() => {
+                setTrayOpen((current) => !current);
+              }}
+            >
+              {trayOpen ? '<' : '>'}
+            </button>
+          </div>
+          {trayOpen ? (
+            <>
+              <div className="map-switcher">
+                {(['mcity', 'columbus'] as const).map((presetKey) => {
+                  const preset = MAP_PRESETS[presetKey];
+                  const active = presetKey === mapPresetKey;
+                  return (
+                    <button
+                      key={preset.key}
+                      className={`map-switcher__button${active ? ' map-switcher__button--active' : ''}`}
+                      type="button"
+                      disabled={bridgeReady}
+                      onClick={() => {
+                        onMapPresetChange(preset.key);
+                      }}
+                    >
+                      <span>{preset.label}</span>
+                      <small>{preset.description}</small>
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="map-mode-switcher">
+                <button
+                  className={`map-mode-switcher__button${interactionMode === 'goal' ? ' map-mode-switcher__button--active' : ''}`}
+                  type="button"
+                  onClick={() => {
+                    onInteractionModeChange('goal');
+                    setMapStatusMessage('Goal Mode is active.');
+                  }}
+                >
+                  Goal Mode
+                </button>
+                <button
+                  className={`map-mode-switcher__button${createModeEnabled ? ' map-mode-switcher__button--active' : ''}`}
+                  type="button"
+                  onClick={() => {
+                    onInteractionModeChange('editor');
+                    setMapStatusMessage('Create Mode is active. Use the bottom hotbar to place or delete objects.');
+                  }}
+                >
+                  Create Mode
+                </button>
+              </div>
+              <p className="map-hint">
+                {mapHint}
+              </p>
+            </>
+          ) : null}
         </div>
-        <div className="map-switcher">
-          {(['mcity', 'columbus'] as const).map((presetKey) => {
-            const preset = MAP_PRESETS[presetKey];
-            const active = presetKey === mapPresetKey;
-            return (
-              <button
-                key={preset.key}
-                className={`map-switcher__button${active ? ' map-switcher__button--active' : ''}`}
-                type="button"
-                disabled={bridgeReady}
-                onClick={() => {
-                  onMapPresetChange(preset.key);
-                }}
-              >
-                <span>{preset.label}</span>
-                <small>{preset.description}</small>
-              </button>
-            );
-          })}
-        </div>
-        <div className="map-mode-switcher">
-          <button
-            className={`map-mode-switcher__button${interactionMode === 'goal' ? ' map-mode-switcher__button--active' : ''}`}
-            type="button"
-            onClick={() => {
-              onInteractionModeChange('goal');
-            }}
-          >
-            Goal Mode
-          </button>
-          <button
-            className={`map-mode-switcher__button${createModeEnabled ? ' map-mode-switcher__button--active' : ''}`}
-            type="button"
-            onClick={() => {
-              onInteractionModeChange('editor');
-            }}
-          >
-            Create Mode
-          </button>
-        </div>
-        <p className="map-hint">
-          {mapHint}
-        </p>
       </div>
       <div className="map-overlay map-overlay--top-right">
         <div className="button-stack">
+          <BridgeStatusPanel
+            bridgeState={bridgeState}
+            connectionStatus={connectionStatus}
+            errorMessage={errorMessage}
+            lastCommandMessage={lastCommandMessage}
+          />
           <button
             className={`action-button${followButtonActive ? ' action-button--active' : ''}`}
             type="button"
@@ -868,11 +963,45 @@ export function MapView({
           </button>
         </div>
       </div>
-      <div className="map-overlay map-overlay--bottom-left">
-        <p className={`map-status-note${bridgeReady ? '' : ' map-status-note--warning'}`}>
-          {mapCommandNote}
-        </p>
-      </div>
+      {createModeEnabled ? (
+        <div className="map-overlay map-overlay--bottom-center">
+          <div className="map-hotbar">
+            <div className="map-hotbar__tools">
+              {CREATE_HOTBAR_TOOLS.map((tool) => (
+                <button
+                  key={tool}
+                  className={`map-hotbar__button${editorTool === tool ? ' map-hotbar__button--active' : ''}${tool === 'delete' ? ' map-hotbar__button--danger' : ''}`}
+                  type="button"
+                  onClick={() => {
+                    onEditorToolChange(tool);
+                    onInteractionModeChange('editor');
+                    setMapStatusMessage(
+                      tool === 'delete'
+                        ? 'Delete mode armed. Click any saved waypoint or scene prop to remove it.'
+                        : `${EDITOR_TOOL_META[tool].label} placement armed.`,
+                    );
+                  }}
+                >
+                  <strong>{EDITOR_TOOL_META[tool].shortLabel}</strong>
+                  <span>{EDITOR_TOOL_META[tool].label}</span>
+                </button>
+              ))}
+            </div>
+            <p className="map-hotbar__meta">
+              {editorTool === 'delete'
+                ? 'Delete mode: click an existing waypoint or prop to remove it.'
+                : `Placement mode: click on the map to drop a ${EDITOR_TOOL_META[editorTool].label.toLowerCase()}.`}
+            </p>
+          </div>
+        </div>
+      ) : null}
+      {showMapCommandNote ? (
+        <div className="map-overlay map-overlay--bottom-left">
+          <p className={`map-status-note${bridgeReady ? '' : ' map-status-note--warning'}`}>
+            {mapCommandNote}
+          </p>
+        </div>
+      ) : null}
     </section>
   );
 }

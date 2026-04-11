@@ -1,12 +1,9 @@
 import { formatLatLon } from '../../lib/format';
 import {
-  EDITOR_TOOL_META,
   getSceneObjectTitle,
 } from '../../lib/editorObjects';
 import { getWaypointLabel } from '../../lib/waypoints';
 import type {
-  EditorTool,
-  MapInteractionMode,
   SceneObject,
   Waypoint,
 } from '../../types/ui';
@@ -17,12 +14,8 @@ interface EditorPanelProps {
   generatedWorldPath: string | null;
   generatedWorldError: string | null;
   liveScenePublishingEnabled: boolean;
-  interactionMode: MapInteractionMode;
-  editorTool: EditorTool;
   waypoints: Waypoint[];
   sceneObjects: SceneObject[];
-  onInteractionModeChange: (mode: MapInteractionMode) => void;
-  onEditorToolChange: (tool: EditorTool) => void;
   onClearWaypoints: () => void;
   onRemoveWaypoint: (id: string) => void;
   onActivateWaypoint: (waypoint: Waypoint) => Promise<void>;
@@ -35,91 +28,24 @@ export function EditorPanel({
   generatedWorldPath,
   generatedWorldError,
   liveScenePublishingEnabled,
-  interactionMode,
-  editorTool,
   waypoints,
   sceneObjects,
-  onInteractionModeChange,
-  onEditorToolChange,
   onClearWaypoints,
   onRemoveWaypoint,
   onActivateWaypoint,
   onClearSceneObjects,
   onRemoveSceneObject,
 }: EditorPanelProps) {
-  const createModeEnabled = interactionMode === 'editor';
   const trafficLightCount = sceneObjects.filter((object) => object.kind === 'traffic_light').length;
   const barrelCount = sceneObjects.filter((object) => object.kind === 'barrel').length;
 
   return (
-    <PanelCard
-      title="Scenario Editor"
-      eyebrow="Create / Place"
-      action={
-        <div className="toggle-group">
-          <button
-            className={`toggle-button${interactionMode === 'goal' ? ' toggle-button--active' : ''}`}
-            type="button"
-            onClick={() => {
-              onInteractionModeChange('goal');
-            }}
-          >
-            Drive
-          </button>
-          <button
-            className={`toggle-button${createModeEnabled ? ' toggle-button--active' : ''}`}
-            type="button"
-            onClick={() => {
-              onInteractionModeChange('editor');
-            }}
-          >
-            Create
-          </button>
-        </div>
-      }
-    >
+    <PanelCard title="Scenario Inventory" eyebrow="Saved Objects">
       <dl className="metric-grid">
         <div>
-          <dt>Mode</dt>
-          <dd>{createModeEnabled ? 'Create Mode' : 'Drive / Goal Mode'}</dd>
-        </div>
-        <div>
-          <dt>Active Tool</dt>
-          <dd>{EDITOR_TOOL_META[editorTool].label}</dd>
-        </div>
-        <div>
-          <dt>Waypoints</dt>
+          <dt>Route Points</dt>
           <dd>{waypoints.length}</dd>
         </div>
-        <div>
-          <dt>Scene Props</dt>
-          <dd>{sceneObjects.length}</dd>
-        </div>
-      </dl>
-
-      <div className="editor-tool-grid">
-        {(['waypoint', 'traffic_light', 'barrel'] as const).map((tool) => (
-          <button
-            key={tool}
-            className={`editor-tool-button${editorTool === tool ? ' editor-tool-button--active' : ''}`}
-            type="button"
-            onClick={() => {
-              onEditorToolChange(tool);
-            }}
-          >
-            <strong>{EDITOR_TOOL_META[tool].label}</strong>
-            <span>{EDITOR_TOOL_META[tool].description}</span>
-          </button>
-        ))}
-      </div>
-
-      <p className="panel-note">
-        {createModeEnabled
-          ? `Create Mode is live. Blank-map clicks place ${EDITOR_TOOL_META[editorTool].label.toLowerCase()} objects. Existing waypoint pins still route there when clicked.`
-          : 'Drive / Goal Mode is live. Map clicks send goals, and editor placement is locked until you turn Create Mode on.'}
-      </p>
-
-      <dl className="metric-grid metric-grid--dense">
         <div>
           <dt>Traffic Lights</dt>
           <dd>{trafficLightCount}</dd>
@@ -127,6 +53,10 @@ export function EditorPanel({
         <div>
           <dt>Barrels</dt>
           <dd>{barrelCount}</dd>
+        </div>
+        <div>
+          <dt>Total Props</dt>
+          <dd>{sceneObjects.length}</dd>
         </div>
       </dl>
 
@@ -168,7 +98,7 @@ export function EditorPanel({
         <div className="waypoint-list">
           {waypoints.length === 0 ? (
             <p className="panel-note">
-              No saved waypoints yet. Turn on Create Mode and choose the Waypoint tool to place them.
+              No saved waypoints yet. Enter Create Mode from the map tray and use the bottom hotbar to place them.
             </p>
           ) : (
             waypoints.map((waypoint, index) => (
@@ -214,7 +144,7 @@ export function EditorPanel({
         <div className="waypoint-list">
           {sceneObjects.length === 0 ? (
             <p className="panel-note">
-              No traffic lights or barrels yet. Turn on Create Mode and choose a prop tool to place them.
+              No traffic lights or barrels yet. Enter Create Mode from the map tray and use the bottom hotbar to place them.
             </p>
           ) : (
             sceneObjects.map((object) => (

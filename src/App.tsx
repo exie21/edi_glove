@@ -3,7 +3,6 @@ import { useEffect, useState } from 'react';
 import { useBridgeState } from './hooks/useBridgeState';
 import { useKeyboardDrive } from './hooks/useKeyboardDrive';
 import { MapView } from './components/map/MapView';
-import { BridgeStatusPanel } from './components/panels/BridgeStatusPanel';
 import { EditorPanel } from './components/panels/EditorPanel';
 import { GoalPanel } from './components/panels/GoalPanel';
 import { ManualDrivePanel } from './components/panels/ManualDrivePanel';
@@ -126,15 +125,24 @@ export default function App() {
           bridgeState={bridgeState}
           connectionStatus={connectionStatus}
           bridgeReady={bridgeReady}
+          errorMessage={errorMessage}
+          lastCommandMessage={lastCommandMessage}
           mapPresetKey={mapPresetKey}
           onMapPresetChange={setMapPresetKey}
           interactionMode={interactionMode}
           onInteractionModeChange={setInteractionMode}
           editorTool={editorTool}
+          onEditorToolChange={setEditorTool}
           waypoints={waypoints}
           sceneObjects={sceneObjects}
           onAddWaypoint={addWaypoint}
           onAddSceneObject={addSceneObject}
+          onRemoveWaypoint={(id) => {
+            setWaypoints((current) => current.filter((waypoint) => waypoint.id !== id));
+          }}
+          onRemoveSceneObject={(id) => {
+            setSceneObjects((current) => current.filter((object) => object.id !== id));
+          }}
           overlayVisibility={overlayVisibility}
           onGoalPick={setGoal}
           onResetVehicle={resetVehicle}
@@ -142,12 +150,6 @@ export default function App() {
       </section>
       <aside className="app-shell__sidebar">
         <div className="app-shell__sidebar-scroll">
-          <BridgeStatusPanel
-            bridgeState={bridgeState}
-            connectionStatus={connectionStatus}
-            errorMessage={errorMessage}
-            lastCommandMessage={lastCommandMessage}
-          />
           <ManualDrivePanel
             bridgeReady={bridgeReady}
             mode={currentMode}
@@ -180,12 +182,8 @@ export default function App() {
             liveScenePublishingEnabled={
               bridgeState?.scene.publish_to_perception ?? false
             }
-            interactionMode={interactionMode}
-            editorTool={editorTool}
             waypoints={waypoints}
             sceneObjects={sceneObjects}
-            onInteractionModeChange={setInteractionMode}
-            onEditorToolChange={setEditorTool}
             onClearWaypoints={() => {
               setWaypoints([]);
             }}

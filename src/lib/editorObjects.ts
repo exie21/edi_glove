@@ -25,7 +25,19 @@ export const EDITOR_TOOL_META: Record<
     shortLabel: 'BR',
     description: 'Scene marker for work-zone barrels or lane-closure props.',
   },
+  delete: {
+    label: 'Delete',
+    shortLabel: 'DEL',
+    description: 'Click an existing waypoint or scene prop on the map to remove it.',
+  },
 };
+
+export const CREATE_HOTBAR_TOOLS: EditorTool[] = [
+  'waypoint',
+  'traffic_light',
+  'barrel',
+  'delete',
+];
 
 export function getNextSceneObjectLabel(
   kind: SceneObjectKind,

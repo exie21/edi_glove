@@ -1,7 +1,7 @@
 export type OverlayKey = 'route' | 'trajectory' | 'predicted' | 'debug';
 export type MapInteractionMode = 'goal' | 'editor';
-export type EditorTool = 'waypoint' | 'traffic_light' | 'barrel';
-export type SceneObjectKind = Exclude<EditorTool, 'waypoint'>;
+export type EditorTool = 'waypoint' | 'traffic_light' | 'barrel' | 'delete';
+export type SceneObjectKind = Exclude<EditorTool, 'waypoint' | 'delete'>;
 
 export interface OverlayVisibility {
   route: boolean;

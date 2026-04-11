@@ -1,7 +1,8 @@
+import { useState } from 'react';
+
 import { getBridgeBaseUrl } from '../../lib/bridgeApi';
 import { formatMode } from '../../lib/format';
 import type { BridgeState } from '../../types/bridge';
-import { PanelCard } from './PanelCard';
 
 interface BridgeStatusPanelProps {
   bridgeState: BridgeState | null;
@@ -16,54 +17,62 @@ export function BridgeStatusPanel({
   errorMessage,
   lastCommandMessage,
 }: BridgeStatusPanelProps) {
+  const [expanded, setExpanded] = useState(false);
   const displayName = bridgeState?.display_name ?? 'Ediglove';
-  const showingCachedState = connectionStatus === 'error' && Boolean(bridgeState);
+  const mode = formatMode(bridgeState?.bridge.mode);
+  const control = formatMode(bridgeState?.bridge.last_control_source);
+  const service = bridgeState?.bridge.service_ready ? 'Ready' : 'Waiting';
 
   return (
-    <PanelCard
-      title={displayName}
-      eyebrow="Bridge"
-      action={
-        <span className={`status-pill status-pill--${connectionStatus}`}>
-          {connectionStatus}
-        </span>
-      }
-    >
-      <dl className="metric-grid">
-        <div>
-          <dt>Mode</dt>
-          <dd>{formatMode(bridgeState?.bridge.mode)}</dd>
+    <div className="debug-widget">
+      <button
+        className={`debug-widget__toggle debug-widget__toggle--${connectionStatus}`}
+        type="button"
+        aria-expanded={expanded}
+        onClick={() => {
+          setExpanded((current) => !current);
+        }}
+      >
+        <span className={`debug-widget__dot debug-widget__dot--${connectionStatus}`} />
+        <span>Debug</span>
+      </button>
+      {expanded ? (
+        <div className="debug-widget__panel">
+          <div className="debug-widget__header">
+            <div>
+              <p className="debug-widget__eyebrow">Bridge</p>
+              <strong className="debug-widget__title">{displayName}</strong>
+            </div>
+            <span className={`status-pill status-pill--${connectionStatus}`}>
+              {connectionStatus}
+            </span>
+          </div>
+          <dl className="debug-widget__stats">
+            <div>
+              <dt>Mode</dt>
+              <dd>{mode}</dd>
+            </div>
+            <div>
+              <dt>Control</dt>
+              <dd>{control}</dd>
+            </div>
+            <div>
+              <dt>Service</dt>
+              <dd>{service}</dd>
+            </div>
+          </dl>
+          <p className="debug-widget__endpoint">{getBridgeBaseUrl()}</p>
+          {errorMessage ? (
+            <p className="debug-widget__message debug-widget__message--error">
+              {errorMessage}
+            </p>
+          ) : lastCommandMessage ? (
+            <p className="debug-widget__message debug-widget__message--success">
+              {lastCommandMessage}
+            </p>
+          ) : null}
         </div>
-        <div>
-          <dt>Control</dt>
-          <dd>{formatMode(bridgeState?.bridge.last_control_source)}</dd>
-        </div>
-        <div>
-          <dt>Service</dt>
-          <dd>{bridgeState?.bridge.service_ready ? 'Ready' : 'Waiting'}</dd>
-        </div>
-        <div>
-          <dt>Endpoint</dt>
-          <dd>{getBridgeBaseUrl()}</dd>
-        </div>
-      </dl>
-      {lastCommandMessage ? (
-        <p className="panel-note panel-note--success">{lastCommandMessage}</p>
       ) : null}
-      {errorMessage ? (
-        <p className="panel-note panel-note--error">{errorMessage}</p>
-      ) : (
-        <p className="panel-note">
-          Frontend polls the bridge every 300 ms and keeps manual control alive while
-          keys are held.
-        </p>
-      )}
-      {showingCachedState ? (
-        <p className="panel-note panel-note--warning">
-          Bridge polling is down. The telemetry still on screen is the last snapshot and may be
-          stale.
-        </p>
-      ) : null}
-    </PanelCard>
+    </div>
   );
 }
