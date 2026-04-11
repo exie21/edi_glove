@@ -97,7 +97,7 @@ export interface MissionStatus {
 
 export interface BridgeSceneObject {
   id: string;
-  kind: 'traffic_light' | 'barrel';
+  kind: 'traffic_light' | 'barrel' | 'stop_sign';
   label: string;
   latitude_deg: number;
   longitude_deg: number;
@@ -106,7 +106,10 @@ export interface BridgeSceneObject {
   height_m: number;
   width_m: number;
   elevation_m: number;
+  facing_deg?: number;
+  facing_fov_deg?: number;
   stopbar_offset_m?: number;
+  sign_type?: string;
   traffic_light_state?: string;
 }
 
@@ -169,10 +172,12 @@ export interface MissionStartPayload {
 
 export interface SceneObjectPayload {
   id: string;
-  kind: 'traffic_light' | 'barrel';
+  kind: 'traffic_light' | 'barrel' | 'stop_sign';
   label: string;
   latitude_deg: number;
   longitude_deg: number;
+  facing_deg?: number;
+  stopbar_offset_m?: number;
 }
 
 export interface SceneSyncPayload {

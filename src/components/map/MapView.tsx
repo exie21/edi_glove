@@ -39,11 +39,18 @@ const MAX_SOURCE_ZOOM = 19;
 const MAP_STATUS_TIMEOUT_MS = 3000;
 const MIN_SCENE_PROP_SCALE = 0.82;
 const MAX_SCENE_PROP_SCALE = 1.22;
+const STOP_SIGN_DEFAULT_FACING_DEG = 0.0;
+const STOP_SIGN_DEFAULT_STOPBAR_OFFSET_M = 3.0;
+const STOP_SIGN_ROTATION_STEP_DEG = 15.0;
 
 function getScenePropScaleForZoom(zoom: number): number {
   const normalizedZoom = Math.max(15, Math.min(21, zoom));
   const progress = (normalizedZoom - 15) / 6;
   return MIN_SCENE_PROP_SCALE + (MAX_SCENE_PROP_SCALE - MIN_SCENE_PROP_SCALE) * progress;
+}
+
+function normalizeCompassDegrees(value: number): number {
+  return ((value % 360) + 360) % 360;
 }
 
 function buildSatelliteStyle(): Record<string, unknown> {
@@ -111,7 +118,12 @@ interface MapViewProps {
     kind: SceneObject['kind'],
     latitude_deg: number,
     longitude_deg: number,
+    options?: {
+      facing_deg?: number;
+      stopbar_offset_m?: number;
+    },
   ) => void;
+  onUpdateSceneObject: (id: string, updates: Partial<SceneObject>) => void;
   onRemoveWaypoint: (id: string) => void;
   onRemoveSceneObject: (id: string) => void;
   overlayVisibility: OverlayVisibility;
@@ -135,6 +147,7 @@ export function MapView({
   sceneObjects,
   onAddWaypoint,
   onAddSceneObject,
+  onUpdateSceneObject,
   onRemoveWaypoint,
   onRemoveSceneObject,
   overlayVisibility,
@@ -145,6 +158,8 @@ export function MapView({
   const [previewGoal, setPreviewGoal] = useState<BridgeGoal | null>(null);
   const [mapStatusMessage, setMapStatusMessage] = useState<string | null>(null);
   const [trayOpen, setTrayOpen] = useState(true);
+  const [selectedStopSignId, setSelectedStopSignId] = useState<string | null>(null);
+  const [stopSignFacingDeg, setStopSignFacingDeg] = useState(STOP_SIGN_DEFAULT_FACING_DEG);
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const mapReadyRef = useRef(false);
@@ -159,22 +174,39 @@ export function MapView({
   const latestGoalHandlerRef = useRef(onGoalPick);
   const latestAddWaypointRef = useRef(onAddWaypoint);
   const latestAddSceneObjectRef = useRef(onAddSceneObject);
+  const latestUpdateSceneObjectRef = useRef(onUpdateSceneObject);
   const latestRemoveWaypointRef = useRef(onRemoveWaypoint);
   const latestRemoveSceneObjectRef = useRef(onRemoveSceneObject);
   const latestOverlayVisibilityRef = useRef(overlayVisibility);
   const latestWaypointsRef = useRef(waypoints);
   const latestSceneObjectsRef = useRef(sceneObjects);
+  const latestSelectedStopSignIdRef = useRef<string | null>(selectedStopSignId);
   const activePreset = MAP_PRESETS[mapPresetKey];
   const hasLiveBridgeState = bridgeReady && Boolean(bridgeState);
   const followButtonActive = followEgo && hasLiveBridgeState;
   const createModeEnabled = interactionMode === 'editor';
+  const selectedStopSign = selectedStopSignId
+    ? sceneObjects.find((object) => object.id === selectedStopSignId && object.kind === 'stop_sign') ?? null
+    : null;
 
   const waypointLabel = (waypoint: Waypoint) => waypoint.label ?? 'Waypoint';
 
   const applySceneObjectMarkerScale = (map: MapLibreMap) => {
     const scale = getScenePropScaleForZoom(map.getZoom()).toFixed(3);
-    for (const marker of sceneObjectMarkersRef.current.values()) {
+    for (const [markerId, marker] of sceneObjectMarkersRef.current.entries()) {
+      const sceneObject = latestSceneObjectsRef.current.find((candidate) => candidate.id === markerId);
       marker.getElement().style.setProperty('--scene-prop-scale', scale);
+      marker.getElement().style.setProperty(
+        '--scene-prop-yaw',
+        `${normalizeCompassDegrees(sceneObject?.facing_deg ?? 0).toFixed(1)}deg`,
+      );
+      marker.getElement().classList.toggle(
+        'scene-prop-marker--selected',
+        Boolean(
+          latestSelectedStopSignIdRef.current
+          && markerId === latestSelectedStopSignIdRef.current,
+        ),
+      );
     }
   };
 
@@ -190,6 +222,19 @@ export function MapView({
     ) {
       latestRemoveSceneObjectRef.current(object.id);
       setMapStatusMessage(`${object.label} removed from the scene.`);
+      return;
+    }
+
+    if (
+      object.kind === 'stop_sign'
+      && latestInteractionModeRef.current === 'editor'
+      && latestEditorToolRef.current === 'stop_sign'
+    ) {
+      setSelectedStopSignId(object.id);
+      setStopSignFacingDeg(normalizeCompassDegrees(object.facing_deg ?? STOP_SIGN_DEFAULT_FACING_DEG));
+      setMapStatusMessage(
+        `${object.label} selected. Use the hotbar rotation controls to aim the sign.`,
+      );
       return;
     }
 
@@ -219,6 +264,17 @@ export function MapView({
         const element = createScenePropMarkerElement(object.kind, object.label);
         element.dataset.signature = signature;
         element.style.setProperty('--scene-prop-scale', scale);
+        element.style.setProperty(
+          '--scene-prop-yaw',
+          `${normalizeCompassDegrees(object.facing_deg ?? 0).toFixed(1)}deg`,
+        );
+        element.classList.toggle(
+          'scene-prop-marker--selected',
+          Boolean(
+            latestSelectedStopSignIdRef.current
+            && object.id === latestSelectedStopSignIdRef.current,
+          ),
+        );
         element.addEventListener('click', (event) => {
           event.preventDefault();
           event.stopPropagation();
@@ -241,7 +297,37 @@ export function MapView({
       marker
         .setLngLat([object.longitude_deg, object.latitude_deg]);
       marker.getElement().style.setProperty('--scene-prop-scale', scale);
+      marker.getElement().style.setProperty(
+        '--scene-prop-yaw',
+        `${normalizeCompassDegrees(object.facing_deg ?? 0).toFixed(1)}deg`,
+      );
+      marker.getElement().classList.toggle(
+        'scene-prop-marker--selected',
+        Boolean(
+          latestSelectedStopSignIdRef.current
+          && object.id === latestSelectedStopSignIdRef.current,
+        ),
+      );
     }
+  };
+
+  const adjustStopSignRotation = (deltaDeg: number) => {
+    const nextFacingDeg = normalizeCompassDegrees(stopSignFacingDeg + deltaDeg);
+    setStopSignFacingDeg(nextFacingDeg);
+
+    if (selectedStopSign) {
+      latestUpdateSceneObjectRef.current(selectedStopSign.id, {
+        facing_deg: nextFacingDeg,
+      });
+      setMapStatusMessage(
+        `${selectedStopSign.label} rotated to ${nextFacingDeg.toFixed(0)} degrees.`,
+      );
+      return;
+    }
+
+    setMapStatusMessage(
+      `New stop signs will face ${nextFacingDeg.toFixed(0)} degrees.`,
+    );
   };
 
   const activateWaypointGoal = (waypoint: Waypoint) => {
@@ -278,11 +364,13 @@ export function MapView({
   latestGoalHandlerRef.current = onGoalPick;
   latestAddWaypointRef.current = onAddWaypoint;
   latestAddSceneObjectRef.current = onAddSceneObject;
+  latestUpdateSceneObjectRef.current = onUpdateSceneObject;
   latestRemoveWaypointRef.current = onRemoveWaypoint;
   latestRemoveSceneObjectRef.current = onRemoveSceneObject;
   latestOverlayVisibilityRef.current = overlayVisibility;
   latestWaypointsRef.current = waypoints;
   latestSceneObjectsRef.current = sceneObjects;
+  latestSelectedStopSignIdRef.current = selectedStopSignId;
 
   useEffect(() => {
     if (!mapStatusMessage) {
@@ -297,6 +385,30 @@ export function MapView({
       window.clearTimeout(timeoutId);
     };
   }, [mapStatusMessage]);
+
+  useEffect(() => {
+    if (editorTool !== 'stop_sign') {
+      setSelectedStopSignId(null);
+    }
+  }, [editorTool]);
+
+  useEffect(() => {
+    if (!selectedStopSignId) {
+      return;
+    }
+    const selectedExists = sceneObjects.some((object) => object.id === selectedStopSignId);
+    if (!selectedExists) {
+      setSelectedStopSignId(null);
+    }
+  }, [sceneObjects, selectedStopSignId]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) {
+      return;
+    }
+    applySceneObjectMarkerScale(map);
+  }, [sceneObjects, selectedStopSignId]);
 
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) {
@@ -606,9 +718,20 @@ export function MapView({
           activeEditorTool,
           event.lngLat.lat,
           event.lngLat.lng,
+          activeEditorTool === 'stop_sign'
+            ? {
+                facing_deg: stopSignFacingDeg,
+                stopbar_offset_m: STOP_SIGN_DEFAULT_STOPBAR_OFFSET_M,
+              }
+            : undefined,
         );
+        if (activeEditorTool === 'stop_sign') {
+          setSelectedStopSignId(null);
+        }
         setMapStatusMessage(
-          `${EDITOR_TOOL_META[activeEditorTool].label} added to the editor.`,
+          activeEditorTool === 'stop_sign'
+            ? `Stop Sign added facing ${stopSignFacingDeg.toFixed(0)} degrees.`
+            : `${EDITOR_TOOL_META[activeEditorTool].label} added to the editor.`,
         );
         return;
       }
@@ -826,7 +949,9 @@ export function MapView({
         createModeEnabled
           ? editorTool === 'delete'
             ? 'Create Mode is active. Delete mode is armed for placed props and saved waypoints.'
-            : `Create Mode is active. Use the hotbar to place ${EDITOR_TOOL_META[editorTool].label.toLowerCase()} objects.`
+            : editorTool === 'stop_sign'
+              ? 'Create Mode is active. Use the hotbar to place and rotate stop signs.'
+              : `Create Mode is active. Use the hotbar to place ${EDITOR_TOOL_META[editorTool].label.toLowerCase()} objects.`
           : 'Click anywhere to send a goal through the bridge.'
       }`
     : bridgeState
@@ -841,7 +966,11 @@ export function MapView({
     createModeEnabled
       ? editorTool === 'delete'
         ? 'Delete mode is armed. Click any saved waypoint or scene prop on the map to remove it.'
-        : `${EDITOR_TOOL_META[editorTool].label} placement is active. Existing waypoint pins still route there unless Delete is armed.`
+        : editorTool === 'stop_sign'
+          ? selectedStopSign
+            ? `${selectedStopSign.label} is selected. Rotate it from the hotbar or click elsewhere to place another stop sign.`
+            : `Stop Sign placement is active. Use the hotbar rotation controls to set the facing direction before you place one.`
+          : `${EDITOR_TOOL_META[editorTool].label} placement is active. Existing waypoint pins still route there unless Delete is armed.`
       : bridgeReady
       ? 'Live controls are enabled. Use Recenter to jump back to ego and Reset To Map Center to teleport the fake vehicle.'
       : 'Recenter still works in offline mode. Follow Ego and vehicle reset will enable once live ego state is available.'
@@ -983,10 +1112,49 @@ export function MapView({
                 </button>
               ))}
             </div>
+            {editorTool === 'stop_sign' ? (
+              <div className="map-hotbar__rotation">
+                <div className="map-hotbar__rotation-copy">
+                  <strong>
+                    {selectedStopSign ? `Rotate ${selectedStopSign.label}` : 'Stop Sign Facing'}
+                  </strong>
+                  <span>
+                    {selectedStopSign
+                      ? 'Selected sign updates live as you rotate it.'
+                      : 'New stop signs will use this facing direction.'}
+                  </span>
+                </div>
+                <div className="map-hotbar__rotation-controls">
+                  <button
+                    className="overlay-toggle"
+                    type="button"
+                    onClick={() => {
+                      adjustStopSignRotation(-STOP_SIGN_ROTATION_STEP_DEG);
+                    }}
+                  >
+                    -15°
+                  </button>
+                  <span className="map-hotbar__rotation-readout">
+                    {stopSignFacingDeg.toFixed(0)}°
+                  </span>
+                  <button
+                    className="overlay-toggle"
+                    type="button"
+                    onClick={() => {
+                      adjustStopSignRotation(STOP_SIGN_ROTATION_STEP_DEG);
+                    }}
+                  >
+                    +15°
+                  </button>
+                </div>
+              </div>
+            ) : null}
             <p className="map-hotbar__meta">
               {editorTool === 'delete'
                 ? 'Delete mode: click an existing waypoint or prop to remove it.'
-                : `Placement mode: click on the map to drop a ${EDITOR_TOOL_META[editorTool].label.toLowerCase()}.`}
+                : editorTool === 'stop_sign'
+                  ? 'Placement mode: click to place a stop sign, or click an existing one to rotate it.'
+                  : `Placement mode: click on the map to drop a ${EDITOR_TOOL_META[editorTool].label.toLowerCase()}.`}
             </p>
           </div>
         </div>

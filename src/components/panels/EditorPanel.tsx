@@ -37,6 +37,7 @@ export function EditorPanel({
   onRemoveSceneObject,
 }: EditorPanelProps) {
   const trafficLightCount = sceneObjects.filter((object) => object.kind === 'traffic_light').length;
+  const stopSignCount = sceneObjects.filter((object) => object.kind === 'stop_sign').length;
   const barrelCount = sceneObjects.filter((object) => object.kind === 'barrel').length;
 
   return (
@@ -55,6 +56,10 @@ export function EditorPanel({
           <dd>{barrelCount}</dd>
         </div>
         <div>
+          <dt>Stop Signs</dt>
+          <dd>{stopSignCount}</dd>
+        </div>
+        <div>
           <dt>Total Props</dt>
           <dd>{sceneObjects.length}</dd>
         </div>
@@ -62,7 +67,7 @@ export function EditorPanel({
 
       <p className="panel-note">
         {liveScenePublishingEnabled
-          ? 'Live scene publishing is on. Barrels and lights are mirrored to ROS perception while the bridge is connected.'
+          ? 'Live scene publishing is on. Barrels, lights, and stop signs are mirrored to ROS perception while the bridge is connected.'
           : 'Live scene publishing is off in the bridge. Saved scene props can still be written to the generated mock_perception world file.'}
       </p>
       {generatedWorldPath ? (
@@ -144,7 +149,7 @@ export function EditorPanel({
         <div className="waypoint-list">
           {sceneObjects.length === 0 ? (
             <p className="panel-note">
-              No traffic lights or barrels yet. Enter Create Mode from the map tray and use the bottom hotbar to place them.
+              No traffic lights, stop signs, or barrels yet. Enter Create Mode from the map tray and use the bottom hotbar to place them.
             </p>
           ) : (
             sceneObjects.map((object) => (
@@ -155,7 +160,12 @@ export function EditorPanel({
                   </span>
                   <div>
                     <strong>{getSceneObjectTitle(object)}</strong>
-                    <p>{formatLatLon(object.latitude_deg, object.longitude_deg)}</p>
+                    <p>
+                      {formatLatLon(object.latitude_deg, object.longitude_deg)}
+                      {object.kind === 'stop_sign' && typeof object.facing_deg === 'number'
+                        ? ` • facing ${object.facing_deg.toFixed(0)}°`
+                        : ''}
+                    </p>
                   </div>
                 </div>
                 <button

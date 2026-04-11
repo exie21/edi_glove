@@ -20,6 +20,11 @@ export const EDITOR_TOOL_META: Record<
     shortLabel: 'TL',
     description: 'Scene marker for a signalized intersection control point.',
   },
+  stop_sign: {
+    label: 'Stop Sign',
+    shortLabel: 'SS',
+    description: 'Stop sign with an attached stop bar and adjustable facing direction.',
+  },
   barrel: {
     label: 'Barrel',
     shortLabel: 'BR',
@@ -35,6 +40,7 @@ export const EDITOR_TOOL_META: Record<
 export const CREATE_HOTBAR_TOOLS: EditorTool[] = [
   'waypoint',
   'traffic_light',
+  'stop_sign',
   'barrel',
   'delete',
 ];
@@ -68,6 +74,7 @@ export function editorObjectFeatureCollection(
         id: object.id,
         kind: object.kind,
         label: object.label,
+        facing_deg: object.facing_deg,
       },
       geometry: {
         type: 'Point',

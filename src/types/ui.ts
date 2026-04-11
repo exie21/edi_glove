@@ -1,6 +1,6 @@
 export type OverlayKey = 'route' | 'trajectory' | 'predicted' | 'debug';
 export type MapInteractionMode = 'goal' | 'editor';
-export type EditorTool = 'waypoint' | 'traffic_light' | 'barrel' | 'delete';
+export type EditorTool = 'waypoint' | 'traffic_light' | 'stop_sign' | 'barrel' | 'delete';
 export type SceneObjectKind = Exclude<EditorTool, 'waypoint' | 'delete'>;
 
 export interface OverlayVisibility {
@@ -23,6 +23,8 @@ export interface SceneObject {
   label: string;
   latitude_deg: number;
   longitude_deg: number;
+  facing_deg?: number;
+  stopbar_offset_m?: number;
 }
 
 export const DEFAULT_OVERLAY_VISIBILITY: OverlayVisibility = {

@@ -38,6 +38,20 @@ function buildTrafficLightVisual(): HTMLSpanElement {
   return visual;
 }
 
+function buildStopSignVisual(): HTMLSpanElement {
+  const visual = createSpan(
+    'scene-prop-marker__visual scene-prop-marker__visual--stop-sign',
+  );
+  const post = createSpan('scene-prop-marker__stop-post');
+  const face = createSpan('scene-prop-marker__stop-face');
+  const text = createSpan('scene-prop-marker__stop-text', 'STOP');
+  const stopbar = createSpan('scene-prop-marker__stopbar');
+
+  face.append(text);
+  visual.append(post, face, stopbar);
+  return visual;
+}
+
 export function createScenePropMarkerElement(
   kind: SceneObjectKind,
   label: string,
@@ -48,15 +62,19 @@ export function createScenePropMarkerElement(
   element.setAttribute('aria-label', `${label} ${kind.replace('_', ' ')}`);
 
   const stack = createSpan('scene-prop-marker__stack');
+  const yawGroup = createSpan('scene-prop-marker__yaw');
   const shadow = createSpan('scene-prop-marker__shadow');
   const labelTag = createSpan('scene-prop-marker__tag', label);
 
-  stack.append(shadow);
-  stack.append(
+  yawGroup.append(shadow);
+  yawGroup.append(
     kind === 'barrel'
       ? buildBarrelVisual()
-      : buildTrafficLightVisual(),
+      : kind === 'stop_sign'
+        ? buildStopSignVisual()
+        : buildTrafficLightVisual(),
   );
+  stack.append(yawGroup);
   stack.append(labelTag);
   element.append(stack);
 

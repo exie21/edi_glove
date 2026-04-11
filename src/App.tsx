@@ -70,6 +70,8 @@ export default function App() {
         label: object.label,
         latitude_deg: object.latitude_deg,
         longitude_deg: object.longitude_deg,
+        facing_deg: object.facing_deg,
+        stopbar_offset_m: object.stopbar_offset_m,
       })),
     }).catch(() => {
       // Polling already reports bridge connectivity; keep scene sync quiet here.
@@ -107,6 +109,10 @@ export default function App() {
     kind: SceneObject['kind'],
     latitude_deg: number,
     longitude_deg: number,
+    options?: {
+      facing_deg?: number;
+      stopbar_offset_m?: number;
+    },
   ) => {
     setSceneObjects((current) => [
       ...current,
@@ -116,6 +122,8 @@ export default function App() {
         label: getNextSceneObjectLabel(kind, current),
         latitude_deg,
         longitude_deg,
+        facing_deg: options?.facing_deg,
+        stopbar_offset_m: options?.stopbar_offset_m,
       },
     ]);
   };
@@ -144,6 +152,16 @@ export default function App() {
           sceneObjects={sceneObjects}
           onAddWaypoint={addWaypoint}
           onAddSceneObject={addSceneObject}
+          onUpdateSceneObject={(id, updates) => {
+            setSceneObjects((current) => current.map((object) => (
+              object.id === id
+                ? {
+                    ...object,
+                    ...updates,
+                  }
+                : object
+            )));
+          }}
           onRemoveWaypoint={(id) => {
             setWaypoints((current) => current.filter((waypoint) => waypoint.id !== id));
           }}
