@@ -1052,6 +1052,212 @@ select {
   background: var(--accent-debug);
 }
 
+.scene-prop-marker {
+  --scene-prop-scale: 1;
+  display: inline-flex;
+  align-items: flex-end;
+  justify-content: center;
+  width: 3.2rem;
+  height: 4rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  appearance: none;
+}
+
+.scene-prop-marker:focus-visible {
+  outline: 2px solid rgba(255, 214, 156, 0.42);
+  outline-offset: 0.12rem;
+}
+
+.scene-prop-marker__stack {
+  position: relative;
+  width: 3.2rem;
+  height: 4rem;
+  transform: scale(var(--scene-prop-scale));
+  transform-origin: center bottom;
+  pointer-events: none;
+}
+
+.scene-prop-marker__shadow {
+  position: absolute;
+  left: 50%;
+  bottom: 0.62rem;
+  width: 1.7rem;
+  height: 0.42rem;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.32);
+  filter: blur(2px);
+  transform: translateX(-50%);
+}
+
+.scene-prop-marker__visual {
+  position: absolute;
+  left: 50%;
+  bottom: 0.86rem;
+  transform: translateX(-50%);
+}
+
+.scene-prop-marker__tag {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  min-width: 1.72rem;
+  padding: 0.08rem 0.34rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(7, 16, 24, 0.9);
+  color: var(--text-main);
+  font-size: 0.56rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-align: center;
+  transform: translateX(-50%);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.22);
+}
+
+.scene-prop-marker__visual--barrel {
+  width: 1.85rem;
+  height: 2.36rem;
+}
+
+.scene-prop-marker__barrel-top {
+  position: absolute;
+  top: 0.1rem;
+  left: 50%;
+  width: 1.42rem;
+  height: 0.34rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 243, 192, 0.8);
+  background: linear-gradient(180deg, #fff4c7 0%, #ffd388 100%);
+  transform: translateX(-50%);
+  z-index: 2;
+}
+
+.scene-prop-marker__barrel-body {
+  position: absolute;
+  top: 0.24rem;
+  left: 50%;
+  width: 1.3rem;
+  height: 1.7rem;
+  border-radius: 0.48rem 0.48rem 0.55rem 0.55rem;
+  border: 1px solid rgba(92, 46, 0, 0.55);
+  background:
+    linear-gradient(90deg, rgba(129, 61, 0, 0.95) 0%, rgba(255, 178, 77, 0.98) 22%, rgba(255, 206, 128, 0.96) 50%, rgba(255, 150, 44, 0.96) 75%, rgba(138, 71, 0, 0.95) 100%);
+  box-shadow:
+    inset 0.16rem 0 0 rgba(255, 235, 186, 0.28),
+    inset -0.16rem 0 0 rgba(112, 49, 0, 0.26);
+  transform: translateX(-50%);
+}
+
+.scene-prop-marker__barrel-band {
+  position: absolute;
+  left: 50%;
+  width: 1.38rem;
+  height: 0.22rem;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #fffdf7 0%, #f6ecd1 100%);
+  box-shadow: inset 0 -1px 0 rgba(168, 133, 54, 0.25);
+  transform: translateX(-50%);
+}
+
+.scene-prop-marker__barrel-band--top {
+  top: 0.28rem;
+}
+
+.scene-prop-marker__barrel-band--bottom {
+  bottom: 0.34rem;
+}
+
+.scene-prop-marker__barrel-base {
+  position: absolute;
+  left: 50%;
+  bottom: 0.12rem;
+  width: 1.5rem;
+  height: 0.32rem;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(255, 178, 77, 0.92) 0%, rgba(139, 70, 0, 0.9) 100%);
+  transform: translateX(-50%);
+}
+
+.scene-prop-marker__visual--traffic-light {
+  width: 2rem;
+  height: 2.82rem;
+}
+
+.scene-prop-marker__traffic-pole {
+  position: absolute;
+  left: 50%;
+  bottom: 0.1rem;
+  width: 0.2rem;
+  height: 2rem;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #4f5860 0%, #919da5 55%, #4a535b 100%);
+  transform: translateX(-50%);
+}
+
+.scene-prop-marker__traffic-arm {
+  position: absolute;
+  left: 50%;
+  top: 0.42rem;
+  width: 0.84rem;
+  height: 0.16rem;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #5b646c 0%, #8c98a2 100%);
+  transform: translateX(-0.05rem);
+}
+
+.scene-prop-marker__traffic-head {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: 1rem;
+  height: 1.72rem;
+  padding: 0.13rem 0;
+  border-radius: 0.34rem;
+  border: 1px solid rgba(8, 12, 16, 0.78);
+  background: linear-gradient(180deg, #1b2730 0%, #070e14 100%);
+  box-shadow:
+    inset 0.12rem 0 0 rgba(162, 176, 191, 0.1),
+    0 0.08rem 0.18rem rgba(0, 0, 0, 0.24);
+  transform: translateX(0.22rem);
+}
+
+.scene-prop-marker__traffic-lens {
+  display: block;
+  width: 0.48rem;
+  height: 0.48rem;
+  margin: 0.08rem auto;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow:
+    inset 0 0.04rem 0.08rem rgba(255, 255, 255, 0.16),
+    0 0 0.16rem rgba(0, 0, 0, 0.16);
+}
+
+.scene-prop-marker__traffic-lens--red {
+  background: radial-gradient(circle at 35% 35%, #ffb0a9 0%, #ff7c73 28%, #73241e 100%);
+}
+
+.scene-prop-marker__traffic-lens--yellow {
+  background: radial-gradient(circle at 35% 35%, #fff5b4 0%, #ffe177 28%, #8a6414 100%);
+}
+
+.scene-prop-marker__traffic-lens--green {
+  background: radial-gradient(circle at 35% 35%, #d9ffd0 0%, #87f1ba 28%, #1d603e 100%);
+}
+
+.scene-prop-marker--barrel .scene-prop-marker__tag {
+  border-color: rgba(255, 178, 77, 0.28);
+  background: rgba(54, 28, 0, 0.92);
+}
+
+.scene-prop-marker--traffic_light .scene-prop-marker__tag {
+  border-color: rgba(135, 241, 186, 0.24);
+  background: rgba(7, 24, 16, 0.92);
+}
+
 .ego-marker {
   width: 2.15rem;
   height: 2.15rem;

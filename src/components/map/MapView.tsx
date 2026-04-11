@@ -18,6 +18,7 @@ import {
   MAP_PRESETS,
   type MapPresetKey,
 } from '../../lib/mapPresets';
+import { createScenePropMarkerElement } from '../../lib/scenePropMarker';
 import { waypointFeatureCollection } from '../../lib/waypoints';
 import type {
   BridgeGoal,
@@ -36,6 +37,14 @@ import type {
 const FOLLOW_EGO_MIN_DELTA_DEG = 1e-6;
 const MAX_SOURCE_ZOOM = 19;
 const MAP_STATUS_TIMEOUT_MS = 3000;
+const MIN_SCENE_PROP_SCALE = 0.82;
+const MAX_SCENE_PROP_SCALE = 1.22;
+
+function getScenePropScaleForZoom(zoom: number): number {
+  const normalizedZoom = Math.max(15, Math.min(21, zoom));
+  const progress = (normalizedZoom - 15) / 6;
+  return MIN_SCENE_PROP_SCALE + (MAX_SCENE_PROP_SCALE - MIN_SCENE_PROP_SCALE) * progress;
+}
 
 function buildSatelliteStyle(): Record<string, unknown> {
   return {
@@ -140,6 +149,7 @@ export function MapView({
   const mapRef = useRef<MapLibreMap | null>(null);
   const mapReadyRef = useRef(false);
   const egoMarkerRef = useRef<Marker | null>(null);
+  const sceneObjectMarkersRef = useRef<Map<string, Marker>>(new Map());
   const initialCameraSetRef = useRef(false);
   const lastFollowCenterRef = useRef<{ lat: number; lon: number } | null>(null);
   const latestBridgeStateRef = useRef<BridgeState | null>(bridgeState);
@@ -160,6 +170,79 @@ export function MapView({
   const createModeEnabled = interactionMode === 'editor';
 
   const waypointLabel = (waypoint: Waypoint) => waypoint.label ?? 'Waypoint';
+
+  const applySceneObjectMarkerScale = (map: MapLibreMap) => {
+    const scale = getScenePropScaleForZoom(map.getZoom()).toFixed(3);
+    for (const marker of sceneObjectMarkersRef.current.values()) {
+      marker.getElement().style.setProperty('--scene-prop-scale', scale);
+    }
+  };
+
+  const handleSceneObjectClick = (objectId: string) => {
+    const object = latestSceneObjectsRef.current.find((candidate) => candidate.id === objectId);
+    if (!object) {
+      return;
+    }
+
+    if (
+      latestInteractionModeRef.current === 'editor'
+      && latestEditorToolRef.current === 'delete'
+    ) {
+      latestRemoveSceneObjectRef.current(object.id);
+      setMapStatusMessage(`${object.label} removed from the scene.`);
+      return;
+    }
+
+    setMapStatusMessage(`${object.label} is a local scene object.`);
+  };
+
+  const syncSceneObjectMarkers = (map: MapLibreMap) => {
+    const nextIds = new Set(latestSceneObjectsRef.current.map((object) => object.id));
+
+    for (const [markerId, marker] of sceneObjectMarkersRef.current.entries()) {
+      if (!nextIds.has(markerId)) {
+        marker.remove();
+        sceneObjectMarkersRef.current.delete(markerId);
+      }
+    }
+
+    const scale = getScenePropScaleForZoom(map.getZoom()).toFixed(3);
+
+    for (const object of latestSceneObjectsRef.current) {
+      const marker = sceneObjectMarkersRef.current.get(object.id);
+      const signature = `${object.kind}:${object.label}`;
+
+      if (!marker || marker.getElement().dataset.signature !== signature) {
+        marker?.remove();
+        sceneObjectMarkersRef.current.delete(object.id);
+
+        const element = createScenePropMarkerElement(object.kind, object.label);
+        element.dataset.signature = signature;
+        element.style.setProperty('--scene-prop-scale', scale);
+        element.addEventListener('click', (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          handleSceneObjectClick(object.id);
+        });
+
+        const nextMarker = new maplibregl.Marker({
+          element,
+          anchor: 'bottom',
+          pitchAlignment: 'map',
+          rotationAlignment: 'map',
+        })
+          .setLngLat([object.longitude_deg, object.latitude_deg])
+          .addTo(map);
+
+        sceneObjectMarkersRef.current.set(object.id, nextMarker);
+        continue;
+      }
+
+      marker
+        .setLngLat([object.longitude_deg, object.latitude_deg]);
+      marker.getElement().style.setProperty('--scene-prop-scale', scale);
+    }
+  };
 
   const activateWaypointGoal = (waypoint: Waypoint) => {
     const label = waypointLabel(waypoint);
@@ -259,6 +342,10 @@ export function MapView({
       : null;
     resizeObserver?.observe(container);
     window.addEventListener('resize', resizeMap);
+    const syncSceneMarkerScale = () => {
+      applySceneObjectMarkerScale(map);
+    };
+    map.on('zoom', syncSceneMarkerScale);
 
     map.on('load', () => {
       mapReadyRef.current = true;
@@ -430,45 +517,6 @@ export function MapView({
         },
       });
       map.addLayer({
-        id: 'editor-object-layer',
-        type: 'circle',
-        source: 'editor-objects-source',
-        paint: {
-          'circle-radius': [
-            'interpolate',
-            ['linear'],
-            ['zoom'],
-            15,
-            3.4,
-            18.5,
-            5.8,
-            20.5,
-            7.6,
-          ],
-          'circle-color': [
-            'match',
-            ['get', 'kind'],
-            'traffic_light',
-            '#bbf06e',
-            'barrel',
-            '#ffb24d',
-            '#d7dce2',
-          ],
-          'circle-stroke-color': '#071018',
-          'circle-stroke-width': [
-            'interpolate',
-            ['linear'],
-            ['zoom'],
-            15,
-            0.9,
-            20.5,
-            1.35,
-          ],
-          'circle-pitch-alignment': 'map',
-          'circle-pitch-scale': 'map',
-        },
-      });
-      map.addLayer({
         id: 'waypoint-label-layer',
         type: 'symbol',
         source: 'waypoints-source',
@@ -496,44 +544,13 @@ export function MapView({
           'text-halo-width': 0.55,
         },
       });
-      map.addLayer({
-        id: 'editor-object-label-layer',
-        type: 'symbol',
-        source: 'editor-objects-source',
-        layout: {
-          'text-field': ['get', 'label'],
-          'text-size': [
-            'interpolate',
-            ['linear'],
-            ['zoom'],
-            15,
-            7.3,
-            18.5,
-            8.6,
-            20.5,
-            9.6,
-          ],
-          'text-font': ['Open Sans Bold'],
-          'text-anchor': 'center',
-          'text-allow-overlap': true,
-          'text-ignore-placement': true,
-        },
-        paint: {
-          'text-color': '#071018',
-          'text-halo-color': 'rgba(255, 255, 255, 0.16)',
-          'text-halo-width': 0.45,
-        },
-      });
 
       syncOverlayLayerVisibility(map, latestOverlayVisibilityRef.current);
+      syncSceneObjectMarkers(map);
       map.on('mouseenter', 'waypoint-layer', setWaypointCursor);
       map.on('mouseleave', 'waypoint-layer', clearWaypointCursor);
       map.on('mouseenter', 'waypoint-label-layer', setWaypointCursor);
       map.on('mouseleave', 'waypoint-label-layer', clearWaypointCursor);
-      map.on('mouseenter', 'editor-object-layer', setWaypointCursor);
-      map.on('mouseleave', 'editor-object-layer', clearWaypointCursor);
-      map.on('mouseenter', 'editor-object-label-layer', setWaypointCursor);
-      map.on('mouseleave', 'editor-object-label-layer', clearWaypointCursor);
     });
 
     const setWaypointCursor = () => {
@@ -546,9 +563,6 @@ export function MapView({
     map.on('click', (event) => {
       const clickedWaypointFeature = map.queryRenderedFeatures(event.point, {
         layers: ['waypoint-layer', 'waypoint-label-layer'],
-      })[0];
-      const clickedEditorFeature = map.queryRenderedFeatures(event.point, {
-        layers: ['editor-object-layer', 'editor-object-label-layer'],
       })[0];
 
       if (clickedWaypointFeature) {
@@ -570,28 +584,6 @@ export function MapView({
             return;
           }
           activateWaypointGoal(waypoint);
-          return;
-        }
-      }
-
-      if (clickedEditorFeature) {
-        const objectId =
-          typeof clickedEditorFeature.properties?.id === 'string'
-            ? clickedEditorFeature.properties.id
-            : null;
-        const object = objectId
-          ? latestSceneObjectsRef.current.find((candidate) => candidate.id === objectId)
-          : undefined;
-        if (object) {
-          if (
-            latestInteractionModeRef.current === 'editor'
-            && latestEditorToolRef.current === 'delete'
-          ) {
-            latestRemoveSceneObjectRef.current(object.id);
-            setMapStatusMessage(`${object.label} removed from the scene.`);
-            return;
-          }
-          setMapStatusMessage(`${object.label} is a local scene object.`);
           return;
         }
       }
@@ -651,14 +643,15 @@ export function MapView({
     return () => {
       resizeObserver?.disconnect();
       window.removeEventListener('resize', resizeMap);
+      map.off('zoom', syncSceneMarkerScale);
       map.off('mouseenter', 'waypoint-layer', setWaypointCursor);
       map.off('mouseleave', 'waypoint-layer', clearWaypointCursor);
       map.off('mouseenter', 'waypoint-label-layer', setWaypointCursor);
       map.off('mouseleave', 'waypoint-label-layer', clearWaypointCursor);
-      map.off('mouseenter', 'editor-object-layer', setWaypointCursor);
-      map.off('mouseleave', 'editor-object-layer', clearWaypointCursor);
-      map.off('mouseenter', 'editor-object-label-layer', setWaypointCursor);
-      map.off('mouseleave', 'editor-object-label-layer', clearWaypointCursor);
+      for (const marker of sceneObjectMarkersRef.current.values()) {
+        marker.remove();
+      }
+      sceneObjectMarkersRef.current.clear();
       egoMarkerRef.current?.remove();
       egoMarkerRef.current = null;
       map.remove();
@@ -716,6 +709,7 @@ export function MapView({
     goalSource?.setData(pointFeatureCollection(bridgeState.goal_status.goal ?? previewGoal));
     waypointSource?.setData(waypointFeatureCollection(waypoints));
     editorObjectSource?.setData(editorObjectFeatureCollection(sceneObjects));
+    syncSceneObjectMarkers(map);
 
     egoMarkerRef.current
       ?.setLngLat([bridgeState.ego.longitude_deg, bridgeState.ego.latitude_deg])
@@ -762,6 +756,9 @@ export function MapView({
     goalSource.setData(pointFeatureCollection(bridgeState?.goal_status.goal ?? previewGoal));
     waypointSource?.setData(waypointFeatureCollection(waypoints));
     editorObjectSource?.setData(editorObjectFeatureCollection(sceneObjects));
+    if (map) {
+      syncSceneObjectMarkers(map);
+    }
   }, [bridgeState?.goal_status.goal, previewGoal, sceneObjects, waypoints]);
 
   useEffect(() => {
