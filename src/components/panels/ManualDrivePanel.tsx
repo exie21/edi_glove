@@ -12,7 +12,9 @@ interface ManualDrivePanelProps {
 
 function Keycap({ label, active }: { label: string; active: boolean }) {
   return (
-    <span className={`keycap${active ? ' keycap--active' : ''}`}>{label}</span>
+    <span className={`keycap${label === 'Space' ? ' keycap--wide' : ''}${active ? ' keycap--active' : ''}`}>
+      {label}
+    </span>
   );
 }
 
@@ -28,6 +30,7 @@ export function ManualDrivePanel({
     <PanelCard
       title="Drive Controls"
       eyebrow="Manual / Auto"
+      className="panel-card--compact"
       action={
         <div className="toggle-group">
           <button
@@ -82,9 +85,9 @@ export function ManualDrivePanel({
           </div>
         </div>
       </div>
-      <div className="button-row">
+      <div className="button-row button-row--compact">
         <button
-          className="action-button action-button--ghost"
+          className="action-button action-button--ghost action-button--compact"
           type="button"
           onClick={() => {
             void onResetToOrigin();

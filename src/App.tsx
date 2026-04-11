@@ -26,6 +26,7 @@ export default function App() {
   const [mapPresetKey, setMapPresetKey] = useState(getDefaultMapPreset().key);
   const [interactionMode, setInteractionMode] = useState<MapInteractionMode>('goal');
   const [editorTool, setEditorTool] = useState<EditorTool>('waypoint');
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [waypoints, setWaypoints] = useState<Waypoint[]>([]);
   const [sceneObjects, setSceneObjects] = useState<SceneObject[]>([]);
   const {
@@ -119,7 +120,7 @@ export default function App() {
   };
 
   return (
-    <main className="app-shell">
+    <main className={`app-shell${sidebarOpen ? '' : ' app-shell--sidebar-collapsed'}`}>
       <section className="app-shell__map">
         <MapView
           bridgeState={bridgeState}
@@ -148,7 +149,18 @@ export default function App() {
           onResetVehicle={resetVehicle}
         />
       </section>
-      <aside className="app-shell__sidebar">
+      <aside className={`app-shell__sidebar${sidebarOpen ? '' : ' app-shell__sidebar--collapsed'}`}>
+        <button
+          className="sidebar-toggle"
+          type="button"
+          aria-label={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
+          aria-expanded={sidebarOpen}
+          onClick={() => {
+            setSidebarOpen((current) => !current);
+          }}
+        >
+          <span className="sidebar-toggle__arrow">{sidebarOpen ? '>' : '<'}</span>
+        </button>
         <div className="app-shell__sidebar-scroll">
           <ManualDrivePanel
             bridgeReady={bridgeReady}
