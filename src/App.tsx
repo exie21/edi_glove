@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react';
 import { useEffect, useState } from 'react';
 
 import { useBridgeState } from './hooks/useBridgeState';
@@ -119,8 +120,13 @@ export default function App() {
     ]);
   };
 
+  const sidebarWidth = sidebarOpen ? '24rem' : '3.35rem';
+
   return (
-    <main className={`app-shell${sidebarOpen ? '' : ' app-shell--sidebar-collapsed'}`}>
+    <main
+      className={`app-shell${sidebarOpen ? '' : ' app-shell--sidebar-collapsed'}`}
+      style={{ '--sidebar-offset': sidebarWidth } as CSSProperties}
+    >
       <section className="app-shell__map">
         <MapView
           bridgeState={bridgeState}
