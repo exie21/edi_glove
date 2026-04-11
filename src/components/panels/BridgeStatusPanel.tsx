@@ -18,7 +18,9 @@ export function BridgeStatusPanel({
   lastCommandMessage,
 }: BridgeStatusPanelProps) {
   const [expanded, setExpanded] = useState(false);
-  const displayName = bridgeState?.display_name ?? 'Ediglove';
+  const displayName = bridgeState?.display_name === 'Ediglove'
+    ? 'EdiGlove'
+    : bridgeState?.display_name ?? 'EdiGlove';
   const mode = formatMode(bridgeState?.bridge.mode);
   const control = formatMode(bridgeState?.bridge.last_control_source);
   const service = bridgeState?.bridge.service_ready ? 'Ready' : 'Waiting';

@@ -120,7 +120,7 @@ export default function App() {
     ]);
   };
 
-  const sidebarWidth = sidebarOpen ? '24rem' : '3.35rem';
+  const sidebarWidth = sidebarOpen ? '21.25rem' : '2.9rem';
 
   return (
     <main

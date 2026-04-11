@@ -858,8 +858,7 @@ export function MapView({
         <div className={`map-control-tray${trayOpen ? '' : ' map-control-tray--collapsed'}`}>
           <div className="map-control-tray__header">
             <div className="map-brand">
-              <span className="map-brand__kicker">Standalone Sandbox</span>
-              <strong className="map-brand__title">Ediglove</strong>
+              <strong className="map-brand__title">EdiGlove</strong>
               <span className={`status-pill status-pill--${connectionStatus}`}>
                 {connectionStatus}
               </span>
