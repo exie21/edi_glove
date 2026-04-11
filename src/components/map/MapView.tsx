@@ -41,7 +41,7 @@ const MIN_SCENE_PROP_SCALE = 0.82;
 const MAX_SCENE_PROP_SCALE = 1.22;
 const STOP_SIGN_DEFAULT_FACING_DEG = 0.0;
 const STOP_SIGN_DEFAULT_STOPBAR_OFFSET_M = 3.0;
-const STOP_SIGN_ROTATION_STEP_DEG = 15.0;
+const STOP_SIGN_ROTATION_HANDLE_RADIUS_PX = 54.0;
 
 function getScenePropScaleForZoom(zoom: number): number {
   const normalizedZoom = Math.max(15, Math.min(21, zoom));
@@ -51,6 +51,31 @@ function getScenePropScaleForZoom(zoom: number): number {
 
 function normalizeCompassDegrees(value: number): number {
   return ((value % 360) + 360) % 360;
+}
+
+function computeRotationHandleLngLat(
+  map: MapLibreMap,
+  object: SceneObject,
+  facingDeg: number,
+): maplibregl.LngLat {
+  const center = map.project([object.longitude_deg, object.latitude_deg]);
+  const angleRad = (normalizeCompassDegrees(facingDeg) * Math.PI) / 180.0;
+  const dxPx = Math.sin(angleRad) * STOP_SIGN_ROTATION_HANDLE_RADIUS_PX;
+  const dyPx = -Math.cos(angleRad) * STOP_SIGN_ROTATION_HANDLE_RADIUS_PX;
+
+  return map.unproject([center.x + dxPx, center.y + dyPx]);
+}
+
+function computeFacingFromHandle(
+  map: MapLibreMap,
+  object: SceneObject,
+  handleLngLat: maplibregl.LngLat,
+): number {
+  const center = map.project([object.longitude_deg, object.latitude_deg]);
+  const handlePoint = map.project(handleLngLat);
+  const dxPx = handlePoint.x - center.x;
+  const dyPx = handlePoint.y - center.y;
+  return normalizeCompassDegrees((Math.atan2(dxPx, -dyPx) * 180.0) / Math.PI);
 }
 
 function buildSatelliteStyle(): Record<string, unknown> {
@@ -158,13 +183,15 @@ export function MapView({
   const [previewGoal, setPreviewGoal] = useState<BridgeGoal | null>(null);
   const [mapStatusMessage, setMapStatusMessage] = useState<string | null>(null);
   const [trayOpen, setTrayOpen] = useState(true);
-  const [selectedStopSignId, setSelectedStopSignId] = useState<string | null>(null);
+  const [selectedSceneObjectId, setSelectedSceneObjectId] = useState<string | null>(null);
   const [stopSignFacingDeg, setStopSignFacingDeg] = useState(STOP_SIGN_DEFAULT_FACING_DEG);
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const mapReadyRef = useRef(false);
   const egoMarkerRef = useRef<Marker | null>(null);
   const sceneObjectMarkersRef = useRef<Map<string, Marker>>(new Map());
+  const rotationHandleMarkerRef = useRef<Marker | null>(null);
+  const rotationHandleDraggingRef = useRef(false);
   const initialCameraSetRef = useRef(false);
   const lastFollowCenterRef = useRef<{ lat: number; lon: number } | null>(null);
   const latestBridgeStateRef = useRef<BridgeState | null>(bridgeState);
@@ -180,16 +207,122 @@ export function MapView({
   const latestOverlayVisibilityRef = useRef(overlayVisibility);
   const latestWaypointsRef = useRef(waypoints);
   const latestSceneObjectsRef = useRef(sceneObjects);
-  const latestSelectedStopSignIdRef = useRef<string | null>(selectedStopSignId);
+  const latestSelectedSceneObjectIdRef = useRef<string | null>(selectedSceneObjectId);
   const activePreset = MAP_PRESETS[mapPresetKey];
   const hasLiveBridgeState = bridgeReady && Boolean(bridgeState);
   const followButtonActive = followEgo && hasLiveBridgeState;
   const createModeEnabled = interactionMode === 'editor';
-  const selectedStopSign = selectedStopSignId
-    ? sceneObjects.find((object) => object.id === selectedStopSignId && object.kind === 'stop_sign') ?? null
+  const selectedSceneObject = selectedSceneObjectId
+    ? sceneObjects.find((object) => object.id === selectedSceneObjectId) ?? null
     : null;
+  const selectedStopSign = selectedSceneObject?.kind === 'stop_sign' ? selectedSceneObject : null;
 
   const waypointLabel = (waypoint: Waypoint) => waypoint.label ?? 'Waypoint';
+
+  const syncRotationHandleMarker = (map: MapLibreMap) => {
+    const selectedObjectId = latestSelectedSceneObjectIdRef.current;
+    const selectedObject = selectedObjectId
+      ? latestSceneObjectsRef.current.find((candidate) => candidate.id === selectedObjectId) ?? null
+      : null;
+    const activeStopSign = selectedObject?.kind === 'stop_sign' ? selectedObject : null;
+    const canEditSelection = latestInteractionModeRef.current === 'editor'
+      && latestEditorToolRef.current !== 'delete';
+
+    if (!canEditSelection || !activeStopSign) {
+      rotationHandleMarkerRef.current?.remove();
+      rotationHandleMarkerRef.current = null;
+      rotationHandleDraggingRef.current = false;
+      return;
+    }
+
+    if (!rotationHandleMarkerRef.current) {
+      const element = document.createElement('button');
+      element.type = 'button';
+      element.className = 'scene-rotation-handle';
+      element.setAttribute('aria-label', `Rotate ${activeStopSign.label}`);
+      element.innerHTML = '<span class="scene-rotation-handle__icon">↻</span>';
+
+      const handleMarker = new maplibregl.Marker({
+        element,
+        anchor: 'center',
+        pitchAlignment: 'map',
+        rotationAlignment: 'map',
+        draggable: true,
+      }).addTo(map);
+
+      handleMarker.on('dragstart', () => {
+        rotationHandleDraggingRef.current = true;
+      });
+
+      handleMarker.on('drag', () => {
+        const currentStopSignId = latestSelectedSceneObjectIdRef.current;
+        if (!currentStopSignId) {
+          return;
+        }
+        const currentStopSign = latestSceneObjectsRef.current.find(
+          (candidate) => candidate.id === currentStopSignId && candidate.kind === 'stop_sign',
+        );
+        if (!currentStopSign) {
+          return;
+        }
+
+        const nextFacingDeg = computeFacingFromHandle(
+          map,
+          currentStopSign,
+          handleMarker.getLngLat(),
+        );
+        setStopSignFacingDeg(nextFacingDeg);
+        latestUpdateSceneObjectRef.current(currentStopSign.id, {
+          facing_deg: nextFacingDeg,
+        });
+      });
+
+      handleMarker.on('dragend', () => {
+        rotationHandleDraggingRef.current = false;
+        const currentStopSignId = latestSelectedSceneObjectIdRef.current;
+        if (!currentStopSignId) {
+          return;
+        }
+        const currentStopSign = latestSceneObjectsRef.current.find(
+          (candidate) => candidate.id === currentStopSignId && candidate.kind === 'stop_sign',
+        );
+        if (!currentStopSign) {
+          return;
+        }
+
+        const nextFacingDeg = computeFacingFromHandle(
+          map,
+          currentStopSign,
+          handleMarker.getLngLat(),
+        );
+        setStopSignFacingDeg(nextFacingDeg);
+        latestUpdateSceneObjectRef.current(currentStopSign.id, {
+          facing_deg: nextFacingDeg,
+        });
+        setMapStatusMessage(
+          `${currentStopSign.label} rotated to ${nextFacingDeg.toFixed(0)} degrees.`,
+        );
+        syncRotationHandleMarker(map);
+      });
+
+      rotationHandleMarkerRef.current = handleMarker;
+    }
+
+    rotationHandleMarkerRef.current.getElement().setAttribute(
+      'aria-label',
+      `Rotate ${activeStopSign.label}`,
+    );
+
+    if (!rotationHandleDraggingRef.current) {
+      rotationHandleMarkerRef.current.setLngLat(
+        computeRotationHandleLngLat(
+          map,
+          activeStopSign,
+          activeStopSign.facing_deg ?? stopSignFacingDeg,
+        ),
+      );
+    }
+  };
 
   const applySceneObjectMarkerScale = (map: MapLibreMap) => {
     const scale = getScenePropScaleForZoom(map.getZoom()).toFixed(3);
@@ -203,8 +336,8 @@ export function MapView({
       marker.getElement().classList.toggle(
         'scene-prop-marker--selected',
         Boolean(
-          latestSelectedStopSignIdRef.current
-          && markerId === latestSelectedStopSignIdRef.current,
+          latestSelectedSceneObjectIdRef.current
+          && markerId === latestSelectedSceneObjectIdRef.current,
         ),
       );
     }
@@ -225,15 +358,19 @@ export function MapView({
       return;
     }
 
-    if (
-      object.kind === 'stop_sign'
-      && latestInteractionModeRef.current === 'editor'
-      && latestEditorToolRef.current === 'stop_sign'
-    ) {
-      setSelectedStopSignId(object.id);
-      setStopSignFacingDeg(normalizeCompassDegrees(object.facing_deg ?? STOP_SIGN_DEFAULT_FACING_DEG));
+    if (latestInteractionModeRef.current === 'editor') {
+      setSelectedSceneObjectId(object.id);
+      if (object.kind === 'stop_sign') {
+        setStopSignFacingDeg(
+          normalizeCompassDegrees(object.facing_deg ?? STOP_SIGN_DEFAULT_FACING_DEG),
+        );
+        setMapStatusMessage(
+          `${object.label} selected. Drag it to move, or drag the rotate handle to aim it.`,
+        );
+        return;
+      }
       setMapStatusMessage(
-        `${object.label} selected. Use the hotbar rotation controls to aim the sign.`,
+        `${object.label} selected. Drag it on the map to move it.`,
       );
       return;
     }
@@ -256,6 +393,11 @@ export function MapView({
     for (const object of latestSceneObjectsRef.current) {
       const marker = sceneObjectMarkersRef.current.get(object.id);
       const signature = `${object.kind}:${object.label}`;
+      const canDragObject = (
+        latestInteractionModeRef.current === 'editor'
+        && latestEditorToolRef.current !== 'delete'
+        && latestSelectedSceneObjectIdRef.current === object.id
+      );
 
       if (!marker || marker.getElement().dataset.signature !== signature) {
         marker?.remove();
@@ -271,10 +413,11 @@ export function MapView({
         element.classList.toggle(
           'scene-prop-marker--selected',
           Boolean(
-            latestSelectedStopSignIdRef.current
-            && object.id === latestSelectedStopSignIdRef.current,
+            latestSelectedSceneObjectIdRef.current
+            && object.id === latestSelectedSceneObjectIdRef.current,
           ),
         );
+        element.classList.toggle('scene-prop-marker--draggable', canDragObject);
         element.addEventListener('click', (event) => {
           event.preventDefault();
           event.stopPropagation();
@@ -286,9 +429,32 @@ export function MapView({
           anchor: 'bottom',
           pitchAlignment: 'map',
           rotationAlignment: 'map',
+          draggable: canDragObject,
         })
           .setLngLat([object.longitude_deg, object.latitude_deg])
           .addTo(map);
+
+        nextMarker.on('dragstart', () => {
+          setSelectedSceneObjectId(object.id);
+        });
+        nextMarker.on('drag', () => {
+          const lngLat = nextMarker.getLngLat();
+          latestUpdateSceneObjectRef.current(object.id, {
+            latitude_deg: lngLat.lat,
+            longitude_deg: lngLat.lng,
+          });
+        });
+        nextMarker.on('dragend', () => {
+          const lngLat = nextMarker.getLngLat();
+          latestUpdateSceneObjectRef.current(object.id, {
+            latitude_deg: lngLat.lat,
+            longitude_deg: lngLat.lng,
+          });
+          setMapStatusMessage(`${object.label} moved on the map.`);
+          if (mapRef.current) {
+            syncRotationHandleMarker(mapRef.current);
+          }
+        });
 
         sceneObjectMarkersRef.current.set(object.id, nextMarker);
         continue;
@@ -296,6 +462,7 @@ export function MapView({
 
       marker
         .setLngLat([object.longitude_deg, object.latitude_deg]);
+      marker.setDraggable(canDragObject);
       marker.getElement().style.setProperty('--scene-prop-scale', scale);
       marker.getElement().style.setProperty(
         '--scene-prop-yaw',
@@ -304,30 +471,14 @@ export function MapView({
       marker.getElement().classList.toggle(
         'scene-prop-marker--selected',
         Boolean(
-          latestSelectedStopSignIdRef.current
-          && object.id === latestSelectedStopSignIdRef.current,
+          latestSelectedSceneObjectIdRef.current
+          && object.id === latestSelectedSceneObjectIdRef.current,
         ),
       );
-    }
-  };
-
-  const adjustStopSignRotation = (deltaDeg: number) => {
-    const nextFacingDeg = normalizeCompassDegrees(stopSignFacingDeg + deltaDeg);
-    setStopSignFacingDeg(nextFacingDeg);
-
-    if (selectedStopSign) {
-      latestUpdateSceneObjectRef.current(selectedStopSign.id, {
-        facing_deg: nextFacingDeg,
-      });
-      setMapStatusMessage(
-        `${selectedStopSign.label} rotated to ${nextFacingDeg.toFixed(0)} degrees.`,
-      );
-      return;
+      marker.getElement().classList.toggle('scene-prop-marker--draggable', canDragObject);
     }
 
-    setMapStatusMessage(
-      `New stop signs will face ${nextFacingDeg.toFixed(0)} degrees.`,
-    );
+    syncRotationHandleMarker(map);
   };
 
   const activateWaypointGoal = (waypoint: Waypoint) => {
@@ -370,7 +521,7 @@ export function MapView({
   latestOverlayVisibilityRef.current = overlayVisibility;
   latestWaypointsRef.current = waypoints;
   latestSceneObjectsRef.current = sceneObjects;
-  latestSelectedStopSignIdRef.current = selectedStopSignId;
+  latestSelectedSceneObjectIdRef.current = selectedSceneObjectId;
 
   useEffect(() => {
     if (!mapStatusMessage) {
@@ -387,20 +538,29 @@ export function MapView({
   }, [mapStatusMessage]);
 
   useEffect(() => {
-    if (editorTool !== 'stop_sign') {
-      setSelectedStopSignId(null);
-    }
-  }, [editorTool]);
-
-  useEffect(() => {
-    if (!selectedStopSignId) {
+    if (!selectedSceneObjectId) {
       return;
     }
-    const selectedExists = sceneObjects.some((object) => object.id === selectedStopSignId);
+    const selectedExists = sceneObjects.some((object) => object.id === selectedSceneObjectId);
     if (!selectedExists) {
-      setSelectedStopSignId(null);
+      setSelectedSceneObjectId(null);
     }
-  }, [sceneObjects, selectedStopSignId]);
+  }, [sceneObjects, selectedSceneObjectId]);
+
+  useEffect(() => {
+    if (interactionMode !== 'editor') {
+      setSelectedSceneObjectId(null);
+    }
+  }, [interactionMode]);
+
+  useEffect(() => {
+    if (!selectedStopSign) {
+      return;
+    }
+    setStopSignFacingDeg(
+      normalizeCompassDegrees(selectedStopSign.facing_deg ?? STOP_SIGN_DEFAULT_FACING_DEG),
+    );
+  }, [selectedStopSign]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -408,7 +568,17 @@ export function MapView({
       return;
     }
     applySceneObjectMarkerScale(map);
-  }, [sceneObjects, selectedStopSignId]);
+    syncRotationHandleMarker(map);
+  }, [sceneObjects, selectedSceneObjectId, selectedStopSign]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) {
+      return;
+    }
+    syncSceneObjectMarkers(map);
+    syncRotationHandleMarker(map);
+  }, [editorTool, interactionMode]);
 
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) {
@@ -456,8 +626,10 @@ export function MapView({
     window.addEventListener('resize', resizeMap);
     const syncSceneMarkerScale = () => {
       applySceneObjectMarkerScale(map);
+      syncRotationHandleMarker(map);
     };
     map.on('zoom', syncSceneMarkerScale);
+    map.on('move', syncSceneMarkerScale);
 
     map.on('load', () => {
       mapReadyRef.current = true;
@@ -725,9 +897,7 @@ export function MapView({
               }
             : undefined,
         );
-        if (activeEditorTool === 'stop_sign') {
-          setSelectedStopSignId(null);
-        }
+        setSelectedSceneObjectId(null);
         setMapStatusMessage(
           activeEditorTool === 'stop_sign'
             ? `Stop Sign added facing ${stopSignFacingDeg.toFixed(0)} degrees.`
@@ -767,10 +937,13 @@ export function MapView({
       resizeObserver?.disconnect();
       window.removeEventListener('resize', resizeMap);
       map.off('zoom', syncSceneMarkerScale);
+      map.off('move', syncSceneMarkerScale);
       map.off('mouseenter', 'waypoint-layer', setWaypointCursor);
       map.off('mouseleave', 'waypoint-layer', clearWaypointCursor);
       map.off('mouseenter', 'waypoint-label-layer', setWaypointCursor);
       map.off('mouseleave', 'waypoint-label-layer', clearWaypointCursor);
+      rotationHandleMarkerRef.current?.remove();
+      rotationHandleMarkerRef.current = null;
       for (const marker of sceneObjectMarkersRef.current.values()) {
         marker.remove();
       }
@@ -968,8 +1141,8 @@ export function MapView({
         ? 'Delete mode is armed. Click any saved waypoint or scene prop on the map to remove it.'
         : editorTool === 'stop_sign'
           ? selectedStopSign
-            ? `${selectedStopSign.label} is selected. Rotate it from the hotbar or click elsewhere to place another stop sign.`
-            : `Stop Sign placement is active. Use the hotbar rotation controls to set the facing direction before you place one.`
+            ? `${selectedStopSign.label} is selected. Drag it to move, and drag the rotate handle to aim it.`
+            : 'Stop Sign placement is active. Click to place one, then select it to move or rotate it on the map.'
           : `${EDITOR_TOOL_META[editorTool].label} placement is active. Existing waypoint pins still route there unless Delete is armed.`
       : bridgeReady
       ? 'Live controls are enabled. Use Recenter to jump back to ego and Reset To Map Center to teleport the fake vehicle.'
@@ -1112,48 +1285,11 @@ export function MapView({
                 </button>
               ))}
             </div>
-            {editorTool === 'stop_sign' ? (
-              <div className="map-hotbar__rotation">
-                <div className="map-hotbar__rotation-copy">
-                  <strong>
-                    {selectedStopSign ? `Rotate ${selectedStopSign.label}` : 'Stop Sign Facing'}
-                  </strong>
-                  <span>
-                    {selectedStopSign
-                      ? 'Selected sign updates live as you rotate it.'
-                      : 'New stop signs will use this facing direction.'}
-                  </span>
-                </div>
-                <div className="map-hotbar__rotation-controls">
-                  <button
-                    className="overlay-toggle"
-                    type="button"
-                    onClick={() => {
-                      adjustStopSignRotation(-STOP_SIGN_ROTATION_STEP_DEG);
-                    }}
-                  >
-                    -15°
-                  </button>
-                  <span className="map-hotbar__rotation-readout">
-                    {stopSignFacingDeg.toFixed(0)}°
-                  </span>
-                  <button
-                    className="overlay-toggle"
-                    type="button"
-                    onClick={() => {
-                      adjustStopSignRotation(STOP_SIGN_ROTATION_STEP_DEG);
-                    }}
-                  >
-                    +15°
-                  </button>
-                </div>
-              </div>
-            ) : null}
             <p className="map-hotbar__meta">
               {editorTool === 'delete'
                 ? 'Delete mode: click an existing waypoint or prop to remove it.'
                 : editorTool === 'stop_sign'
-                  ? 'Placement mode: click to place a stop sign, or click an existing one to rotate it.'
+                  ? 'Placement mode: click to place a stop sign. Select any placed prop to move it, and use the rotate handle on selected stop signs.'
                   : `Placement mode: click on the map to drop a ${EDITOR_TOOL_META[editorTool].label.toLowerCase()}.`}
             </p>
           </div>
