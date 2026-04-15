@@ -5,9 +5,20 @@ import {
 import { getWaypointLabel } from '../../lib/waypoints';
 import type {
   SceneObject,
+  TrafficLightState,
   Waypoint,
 } from '../../types/ui';
 import { PanelCard } from './PanelCard';
+
+const TRAFFIC_LIGHT_STATES: TrafficLightState[] = ['red', 'yellow', 'green'];
+const DEFAULT_TRAFFIC_LIGHT_TRIGGER_RADIUS_M = 80;
+const DEFAULT_TRAFFIC_LIGHT_MIN_TRIGGER_RADIUS_M = 3;
+const DEFAULT_TRAFFIC_LIGHT_FACING_FOV_DEG = 160;
+const DEFAULT_TRAFFIC_LIGHT_STOPBAR_OFFSET_M = 8;
+const DEFAULT_STOP_SIGN_TRIGGER_RADIUS_M = 40;
+const DEFAULT_STOP_SIGN_MIN_TRIGGER_RADIUS_M = 3;
+const DEFAULT_STOP_SIGN_STOPBAR_OFFSET_M = 3;
+const DEFAULT_STOP_SIGN_FACING_FOV_DEG = 160;
 
 interface EditorPanelProps {
   bridgeReady: boolean;
@@ -21,6 +32,7 @@ interface EditorPanelProps {
   onActivateWaypoint: (waypoint: Waypoint) => Promise<void>;
   onClearSceneObjects: () => void;
   onRemoveSceneObject: (id: string) => void;
+  onUpdateSceneObject: (id: string, updates: Partial<SceneObject>) => void;
 }
 
 export function EditorPanel({
@@ -35,6 +47,7 @@ export function EditorPanel({
   onActivateWaypoint,
   onClearSceneObjects,
   onRemoveSceneObject,
+  onUpdateSceneObject,
 }: EditorPanelProps) {
   const trafficLightCount = sceneObjects.filter((object) => object.kind === 'traffic_light').length;
   const stopSignCount = sceneObjects.filter((object) => object.kind === 'stop_sign').length;
@@ -152,8 +165,11 @@ export function EditorPanel({
               No traffic lights, stop signs, or barrels yet. Enter Create Mode from the map tray and use the bottom hotbar to place them.
             </p>
           ) : (
-            sceneObjects.map((object) => (
-              <div key={object.id} className="waypoint-row">
+            sceneObjects.map((object) => {
+              const readiness = getSceneObjectReadiness(object);
+
+              return (
+              <div key={object.id} className="waypoint-row waypoint-row--stacked">
                 <div className="waypoint-row__label">
                   <span className={`waypoint-badge waypoint-badge--${object.kind}`}>
                     {object.label}
@@ -174,20 +190,102 @@ export function EditorPanel({
                     </p>
                   </div>
                 </div>
-                <button
-                  className="overlay-toggle"
-                  type="button"
-                  onClick={() => {
-                    onRemoveSceneObject(object.id);
-                  }}
-                >
-                  Remove
-                </button>
+                <div className="scene-prop-row__body">
+                  <p className={`scene-check scene-check--${readiness.level}`}>
+                    <strong>{readiness.label}</strong>
+                    <span>{readiness.detail}</span>
+                  </p>
+                  {object.kind === 'traffic_light' ? (
+                    <div className="scene-signal-row">
+                      <span>Manual Signal</span>
+                      <div className="scene-signal-row__buttons">
+                        {TRAFFIC_LIGHT_STATES.map((state) => {
+                          const activeState = object.traffic_light_state ?? 'red';
+                          return (
+                            <button
+                              key={state}
+                              className={`signal-button signal-button--${state}${
+                                activeState === state ? ' signal-button--active' : ''
+                              }`}
+                              type="button"
+                              onClick={() => {
+                                onUpdateSceneObject(object.id, {
+                                  traffic_light_state: state,
+                                });
+                              }}
+                            >
+                              {state}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : null}
+                  <div className="button-row button-row--compact">
+                    <button
+                      className="overlay-toggle"
+                      type="button"
+                      onClick={() => {
+                        onRemoveSceneObject(object.id);
+                      }}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
               </div>
-            ))
+              );
+            })
           )}
         </div>
       </div>
     </PanelCard>
   );
+}
+
+function getSceneObjectReadiness(object: SceneObject): {
+  level: 'ready' | 'warn';
+  label: string;
+  detail: string;
+} {
+  if (object.kind === 'traffic_light') {
+    const state = object.traffic_light_state ?? 'red';
+    const triggerRadiusM = object.trigger_radius_m ?? DEFAULT_TRAFFIC_LIGHT_TRIGGER_RADIUS_M;
+    const minTriggerRadiusM = object.min_trigger_radius_m ?? DEFAULT_TRAFFIC_LIGHT_MIN_TRIGGER_RADIUS_M;
+    const facingFovDeg = object.facing_fov_deg ?? DEFAULT_TRAFFIC_LIGHT_FACING_FOV_DEG;
+    const stopbarOffsetM = object.stopbar_offset_m ?? DEFAULT_TRAFFIC_LIGHT_STOPBAR_OFFSET_M;
+
+    if (triggerRadiusM <= minTriggerRadiusM || facingFovDeg <= 0) {
+      return {
+        level: 'warn',
+        label: 'Check Trigger',
+        detail: `Needs trigger radius > min radius. Current ${minTriggerRadiusM.toFixed(0)}-${triggerRadiusM.toFixed(0)} m.`,
+      };
+    }
+
+    return {
+      level: 'ready',
+      label: 'Behavior Ready',
+      detail: `${state} light publishes in ${minTriggerRadiusM.toFixed(0)}-${triggerRadiusM.toFixed(0)} m range, FOV ${facingFovDeg.toFixed(0)}°, stopbar ${stopbarOffsetM.toFixed(0)} m.`,
+    };
+  }
+
+  if (object.kind === 'stop_sign') {
+    const triggerRadiusM = object.trigger_radius_m ?? DEFAULT_STOP_SIGN_TRIGGER_RADIUS_M;
+    const minTriggerRadiusM = object.min_trigger_radius_m ?? DEFAULT_STOP_SIGN_MIN_TRIGGER_RADIUS_M;
+    const facingFovDeg = object.facing_fov_deg ?? DEFAULT_STOP_SIGN_FACING_FOV_DEG;
+    const stopbarOffsetM = object.stopbar_offset_m ?? DEFAULT_STOP_SIGN_STOPBAR_OFFSET_M;
+
+    return {
+      level: 'ready',
+      label: 'Behavior Ready',
+      detail: `Stop sign publishes in ${minTriggerRadiusM.toFixed(0)}-${triggerRadiusM.toFixed(0)} m range, FOV ${facingFovDeg.toFixed(0)}°, stopbar ${stopbarOffsetM.toFixed(0)} m.`,
+    };
+  }
+
+  return {
+    level: 'ready',
+    label: 'Perception Ready',
+    detail: 'Barrel publishes as a barricade/work-zone obstacle when ego enters its trigger radius.',
+  };
 }

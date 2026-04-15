@@ -253,6 +253,16 @@ export default function App() {
             onRemoveSceneObject={(id) => {
               setSceneObjects((current) => current.filter((object) => object.id !== id));
             }}
+            onUpdateSceneObject={(id, updates) => {
+              setSceneObjects((current) => current.map((object) => (
+                object.id === id
+                  ? {
+                      ...object,
+                      ...updates,
+                    }
+                  : object
+              )));
+            }}
           />
           <OverlayPanel
             bridgeState={bridgeState}
