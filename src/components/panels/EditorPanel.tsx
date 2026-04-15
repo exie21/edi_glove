@@ -165,6 +165,12 @@ export function EditorPanel({
                       {object.kind === 'stop_sign' && typeof object.facing_deg === 'number'
                         ? ` • facing ${object.facing_deg.toFixed(0)}°`
                         : ''}
+                      {object.kind === 'traffic_light'
+                        ? ` • ${object.traffic_light_state ?? 'red'}`
+                        : ''}
+                      {object.kind === 'traffic_light' && typeof object.facing_deg === 'number'
+                        ? ` • facing ${object.facing_deg.toFixed(0)}°`
+                        : ''}
                     </p>
                   </div>
                 </div>

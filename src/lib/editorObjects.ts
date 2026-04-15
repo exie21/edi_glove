@@ -1,6 +1,11 @@
-import type { FeatureCollection, Point } from 'geojson';
+import type { FeatureCollection, Point, Polygon } from 'geojson';
 
 import type { EditorTool, SceneObject, SceneObjectKind } from '../types/ui';
+
+const METERS_PER_DEGREE_LATITUDE = 111_320;
+const DEFAULT_TRAFFIC_LIGHT_TRIGGER_RADIUS_M = 80;
+const DEFAULT_TRAFFIC_LIGHT_MIN_TRIGGER_RADIUS_M = 3;
+const DEFAULT_TRAFFIC_LIGHT_DETECTION_WIDTH_M = 10;
 
 export const EDITOR_TOOL_META: Record<
   EditorTool,
@@ -81,6 +86,69 @@ export function editorObjectFeatureCollection(
         coordinates: [object.longitude_deg, object.latitude_deg],
       },
     })),
+  };
+}
+
+function offsetLatLon(
+  latitudeDeg: number,
+  longitudeDeg: number,
+  eastM: number,
+  northM: number,
+): [number, number] {
+  const latitudeRad = (latitudeDeg * Math.PI) / 180;
+  const metersPerDegreeLongitude = Math.max(
+    1,
+    METERS_PER_DEGREE_LATITUDE * Math.cos(latitudeRad),
+  );
+
+  return [
+    longitudeDeg + eastM / metersPerDegreeLongitude,
+    latitudeDeg + northM / METERS_PER_DEGREE_LATITUDE,
+  ];
+}
+
+export function trafficLightVisionFeatureCollection(
+  objects: SceneObject[],
+): FeatureCollection<Polygon> {
+  return {
+    type: 'FeatureCollection',
+    features: objects
+      .filter((object) => object.kind === 'traffic_light')
+      .map((object) => {
+        const facingDeg = object.facing_deg ?? 0;
+        const headingRad = (facingDeg * Math.PI) / 180;
+        const forwardEast = Math.sin(headingRad);
+        const forwardNorth = Math.cos(headingRad);
+        const rightEast = Math.cos(headingRad);
+        const rightNorth = -Math.sin(headingRad);
+        const startM = object.min_trigger_radius_m ?? DEFAULT_TRAFFIC_LIGHT_MIN_TRIGGER_RADIUS_M;
+        const endM = object.trigger_radius_m ?? DEFAULT_TRAFFIC_LIGHT_TRIGGER_RADIUS_M;
+        const halfWidthM = (object.detection_width_m ?? DEFAULT_TRAFFIC_LIGHT_DETECTION_WIDTH_M) / 2;
+        const corners = [
+          [startM, -halfWidthM],
+          [endM, -halfWidthM],
+          [endM, halfWidthM],
+          [startM, halfWidthM],
+        ].map(([forwardM, sideM]) => offsetLatLon(
+          object.latitude_deg,
+          object.longitude_deg,
+          forwardEast * forwardM + rightEast * sideM,
+          forwardNorth * forwardM + rightNorth * sideM,
+        ));
+
+        return {
+          type: 'Feature',
+          properties: {
+            id: object.id,
+            label: object.label,
+            state: object.traffic_light_state ?? 'red',
+          },
+          geometry: {
+            type: 'Polygon',
+            coordinates: [[...corners, corners[0]]],
+          },
+        };
+      }),
   };
 }
 

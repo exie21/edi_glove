@@ -71,7 +71,11 @@ export default function App() {
         latitude_deg: object.latitude_deg,
         longitude_deg: object.longitude_deg,
         facing_deg: object.facing_deg,
+        facing_fov_deg: object.facing_fov_deg,
         stopbar_offset_m: object.stopbar_offset_m,
+        traffic_light_state: object.traffic_light_state,
+        trigger_radius_m: object.trigger_radius_m,
+        min_trigger_radius_m: object.min_trigger_radius_m,
       })),
     }).catch(() => {
       // Polling already reports bridge connectivity; keep scene sync quiet here.
@@ -111,7 +115,12 @@ export default function App() {
     longitude_deg: number,
     options?: {
       facing_deg?: number;
+      facing_fov_deg?: number;
       stopbar_offset_m?: number;
+      traffic_light_state?: SceneObject['traffic_light_state'];
+      trigger_radius_m?: number;
+      min_trigger_radius_m?: number;
+      detection_width_m?: number;
     },
   ) => {
     setSceneObjects((current) => [
@@ -123,7 +132,12 @@ export default function App() {
         latitude_deg,
         longitude_deg,
         facing_deg: options?.facing_deg,
+        facing_fov_deg: options?.facing_fov_deg,
         stopbar_offset_m: options?.stopbar_offset_m,
+        traffic_light_state: options?.traffic_light_state,
+        trigger_radius_m: options?.trigger_radius_m,
+        min_trigger_radius_m: options?.min_trigger_radius_m,
+        detection_width_m: options?.detection_width_m,
       },
     ]);
   };

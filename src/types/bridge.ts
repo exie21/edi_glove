@@ -177,7 +177,11 @@ export interface SceneObjectPayload {
   latitude_deg: number;
   longitude_deg: number;
   facing_deg?: number;
+  facing_fov_deg?: number;
   stopbar_offset_m?: number;
+  traffic_light_state?: string;
+  trigger_radius_m?: number;
+  min_trigger_radius_m?: number;
 }
 
 export interface SceneSyncPayload {

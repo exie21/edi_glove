@@ -26,6 +26,9 @@ function buildTrafficLightVisual(): HTMLSpanElement {
   const visual = createSpan(
     'scene-prop-marker__visual scene-prop-marker__visual--traffic-light',
   );
+  const facingArrow = createSpan(
+    'scene-prop-marker__facing-arrow scene-prop-marker__facing-arrow--traffic-light',
+  );
   const pole = createSpan('scene-prop-marker__traffic-pole');
   const arm = createSpan('scene-prop-marker__traffic-arm');
   const head = createSpan('scene-prop-marker__traffic-head');
@@ -34,7 +37,7 @@ function buildTrafficLightVisual(): HTMLSpanElement {
   const green = createSpan('scene-prop-marker__traffic-lens scene-prop-marker__traffic-lens--green');
 
   head.append(red, yellow, green);
-  visual.append(pole, arm, head);
+  visual.append(facingArrow, pole, arm, head);
   return visual;
 }
 
@@ -42,13 +45,14 @@ function buildStopSignVisual(): HTMLSpanElement {
   const visual = createSpan(
     'scene-prop-marker__visual scene-prop-marker__visual--stop-sign',
   );
+  const facingArrow = createSpan('scene-prop-marker__facing-arrow');
   const post = createSpan('scene-prop-marker__stop-post');
   const face = createSpan('scene-prop-marker__stop-face');
   const text = createSpan('scene-prop-marker__stop-text', 'STOP');
   const stopbar = createSpan('scene-prop-marker__stopbar');
 
   face.append(text);
-  visual.append(post, face, stopbar);
+  visual.append(facingArrow, post, face, stopbar);
   return visual;
 }
 
